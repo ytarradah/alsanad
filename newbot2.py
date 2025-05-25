@@ -106,18 +106,44 @@ def load_arabic_css():
     .status-fast {
         background: #28a745;
         color: white;
-        padding: 0.4rem 0.8rem;
-        border-radius: 6px;
-        margin: 0.2rem;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        margin: 0.3rem;
         direction: rtl;
         text-align: center;
         font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 0.85rem;
+        font-size: 1rem;
+        font-weight: 500;
         display: inline-block;
+        min-width: 140px;
     }
     
     .status-fast.offline {
         background: #dc3545;
+    }
+    
+    .status-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin: 1.5rem 0;
+        flex-wrap: wrap;
+    }
+    
+    .loading-message {
+        text-align: center;
+        color: #2E8B57;
+        font-family: 'Noto Sans Arabic', sans-serif;
+        font-size: 1.3rem;
+        font-weight: 600;
+        margin: 1.5rem 0;
+        direction: rtl;
+        padding: 1rem;
+        background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+        border-radius: 12px;
+        border: 2px solid #28a745;
+        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
     }
     
     .stTextArea > div > div > textarea {
@@ -168,10 +194,10 @@ def quick_status_check():
     return status
 
 # ----------------------
-# LIGHTNING FAST Database Search
+# ENHANCED Database Search with better accuracy
 # ----------------------
-def lightning_search(query):
-    """Ultra fast database search - 5 second max"""
+def enhanced_search(query):
+    """More accurate database search with better matching"""
     try:
         # Quick embedding
         try:
@@ -181,74 +207,91 @@ def lightning_search(query):
         except:
             return None
         
-        # Fast search with 5 sec timeout
-        search_data = {"vector": query_embedding, "limit": 2, "with_payload": True}  # Only 2 results for speed
+        # Enhanced search with more results for better accuracy
+        search_data = {
+            "vector": query_embedding, 
+            "limit": 5,  # More results for better accuracy
+            "with_payload": True,
+            "score_threshold": 0.3  # Only return results above 30% similarity
+        }
         
         response = requests.post(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search",
                                headers={"api-key": QDRANT_API_KEY, "Content-Type": "application/json"},
-                               json=search_data, timeout=5)
+                               json=search_data, timeout=8)
         
         if response.status_code == 200:
-            return response.json().get("result", [])
+            results = response.json().get("result", [])
+            # Filter results with decent scores
+            filtered_results = [r for r in results if r.get('score', 0) > 0.3]
+            return filtered_results if filtered_results else results[:3]
         return None
         
-    except:
+    except Exception as e:
+        print(f"Search error: {e}")
         return None
 
 # ----------------------
-# SUPER FAST AI Response
+# IMPROVED AI Response with better context handling
 # ----------------------
-def get_fastest_ai_response(context, query):
-    """Get fastest response - try both simultaneously, use first response"""
+def get_enhanced_ai_response(context, query):
+    """Get better AI response with improved context handling"""
     
-    prompt = f"""أجب فقط من هذه النصوص:
+    # Better prompt for more accurate responses
+    prompt = f"""أنت مساعد ذكي للمرجع الديني الشيخ محمد السند. اقرأ النصوص التالية بعناية:
 
+النصوص من قاعدة البيانات:
 {context}
 
 السؤال: {query}
 
-أجب باختصار وباللغة العربية فقط."""
+تعليمات:
+1. ابحث في النصوص أعلاه عن إجابة للسؤال
+2. إذا وجدت معلومات متعلقة بالسؤال، أجب بناءً عليها
+3. إذا لم تجد إجابة واضحة، قل "لم أجد معلومات كافية في المراجع المتاحة"
+4. أجب باللغة العربية واستشهد من النصوص
+5. كن دقيقاً ومفصلاً في الإجابة"""
     
     def try_deepseek():
         try:
             response = requests.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
                                    headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-                                   json={"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], 
-                                        "temperature": 0.2, "max_tokens": 300},
-                                   timeout=6)
+                                   json={"model": "deepseek-chat", 
+                                        "messages": [{"role": "user", "content": prompt}], 
+                                        "temperature": 0.1,  # Lower temperature for more accuracy
+                                        "max_tokens": 600},  # More tokens for detailed answers
+                                   timeout=10)
             if response.status_code == 200:
                 return response.json()['choices'][0]['message']['content'], "DeepSeek"
-        except:
-            pass
+        except Exception as e:
+            print(f"DeepSeek error: {e}")
         return None, None
     
     def try_gemini():
         try:
             response = requests.post(f"{GEMINI_BASE_URL}?key={GEMINI_API_KEY}",
                                    json={"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}},
-                                   timeout=6)
+                                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 600}},
+                                   timeout=10)
             if response.status_code == 200:
                 return response.json()['candidates'][0]['content']['parts'][0]['text'], "Gemini"
-        except:
-            pass
+        except Exception as e:
+            print(f"Gemini error: {e}")
         return None, None
     
-    # Try both simultaneously using threading for speed
+    # Try both with longer timeout for better accuracy
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_deepseek = executor.submit(try_deepseek)
         future_gemini = executor.submit(try_gemini)
         
-        # Wait for first successful response (max 7 seconds total)
         try:
-            for future in concurrent.futures.as_completed([future_deepseek, future_gemini], timeout=7):
+            for future in concurrent.futures.as_completed([future_deepseek, future_gemini], timeout=12):
                 result, ai_name = future.result()
                 if result:
                     return result, ai_name
         except:
             pass
     
-    return "لم أتمكن من الحصول على إجابة سريعة", "Error"
+    return "لم أتمكن من الحصول على إجابة من النظم المتاحة", "Error"
 
 # ----------------------
 # MAIN ULTRA FAST APP
@@ -273,14 +316,14 @@ def main():
     
     status = st.session_state.status
     
-    # Compact status display
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(f'<div class="status-fast {'offline' if not status['qdrant'] else ''}">🟢 قاعدة البيانات</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<div class="status-fast {'offline' if not status['deepseek'] else ''}">🚀 DeepSeek</div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown(f'<div class="status-fast {'offline' if not status['gemini'] else ''}">🤖 Gemini</div>', unsafe_allow_html=True)
+    # Centered and bigger status display
+    st.markdown('<div class="status-container">', unsafe_allow_html=True)
+    st.markdown(f'''
+    <div class="status-fast {'offline' if not status['qdrant'] else ''}">🟢 قاعدة البيانات</div>
+    <div class="status-fast {'offline' if not status['deepseek'] else ''}">🚀 DeepSeek</div>
+    <div class="status-fast {'offline' if not status['gemini'] else ''}">🤖 Gemini</div>
+    ''', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Chat history
     if "messages" not in st.session_state:
@@ -332,11 +375,20 @@ def main():
         # Add user message
         st.session_state.messages.append({"role": "user", "content": user_question.strip()})
         
-        # Lightning fast search
-        search_results = lightning_search(user_question.strip())
+        # Show loading message for search
+        search_placeholder = st.empty()
+        search_placeholder.markdown('<div class="loading-message">🔍 جاري البحث في قاعدة البيانات...</div>', unsafe_allow_html=True)
+        
+        # Enhanced search with better accuracy
+        search_results = enhanced_search(user_question.strip())
+        search_placeholder.empty()  # Remove search message
         
         if search_results:
-            # Quick context preparation
+            # Show loading message for AI response
+            ai_placeholder = st.empty()
+            ai_placeholder.markdown('<div class="loading-message">🤖 جاري تحضير الإجابة من المراجع...</div>', unsafe_allow_html=True)
+            
+            # Better context preparation
             context_texts = []
             sources = []
             
@@ -344,17 +396,18 @@ def main():
                 payload = result.get("payload", {})
                 text = payload.get('text', '')
                 if text:
-                    context_texts.append(text[:800])  # Limit text length for speed
+                    context_texts.append(text)  # Keep full text for better accuracy
                     sources.append({
                         'source': payload.get('source', 'مجهول'),
                         'percentage': min(100, int(result.get('score', 0.0) * 100))
                     })
             
             if context_texts:
-                context = "\n---\n".join(context_texts)
+                context = "\n\n---\n\n".join(context_texts)
                 
-                # Get fastest AI response
-                response, ai_used = get_fastest_ai_response(context, user_question.strip())
+                # Get enhanced AI response
+                response, ai_used = get_enhanced_ai_response(context, user_question.strip())
+                ai_placeholder.empty()  # Remove AI loading message
                 
                 st.session_state.messages.append({
                     "role": "assistant", 
@@ -363,6 +416,7 @@ def main():
                     "ai_used": ai_used
                 })
             else:
+                ai_placeholder.empty()
                 st.session_state.messages.append({
                     "role": "assistant", 
                     "content": "لا توجد معلومات مناسبة في قاعدة البيانات",
@@ -371,7 +425,7 @@ def main():
         else:
             st.session_state.messages.append({
                 "role": "assistant", 
-                "content": "خطأ في البحث أو لا توجد نتائج",
+                "content": "لم أتمكن من البحث في قاعدة البيانات أو لا توجد نتائج مطابقة",
                 "ai_used": "System"
             })
         
