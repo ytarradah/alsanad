@@ -1,9 +1,7 @@
 import streamlit as st
 import time
-from datetime import datetime
 import json
 import requests
-import pandas as pd
 
 # ----------------------
 # Configuration
@@ -15,7 +13,7 @@ DEEPSEEK_API_KEY = "sk-14f267781a6f474a9d0ec8240383dae4"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # ----------------------
-# Arabic CSS Styling
+# Fast Arabic CSS Styling
 # ----------------------
 def load_arabic_css():
     st.markdown("""
@@ -41,27 +39,6 @@ def load_arabic_css():
         margin-bottom: 2rem;
         direction: rtl;
         font-style: italic;
-    }
-    
-    .loading-spinner {
-        text-align: center;
-        color: #2E8B57;
-        font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 1.2rem;
-        font-weight: 500;
-        margin: 1rem 0;
-        direction: rtl;
-        padding: 0.8rem;
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 10px;
-        border: 1px solid #2E8B57;
-        box-shadow: 0 2px 8px rgba(46, 139, 87, 0.1);
-    }
-    
-    .chat-container {
-        direction: rtl;
-        text-align: right;
-        font-family: 'Noto Sans Arabic', sans-serif;
     }
     
     .user-message {
@@ -99,7 +76,6 @@ def load_arabic_css():
         text-align: right;
         font-family: 'Noto Sans Arabic', sans-serif;
         border-left: 4px solid #2E8B57;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     
     .source-percentage {
@@ -138,192 +114,116 @@ def load_arabic_css():
         padding: 20px !important;
         line-height: 1.6 !important;
     }
-    
-    .stSelectbox > div > div > select {
-        direction: rtl;
-        text-align: right;
-        font-family: 'Noto Sans Arabic', sans-serif;
-    }
-    
-    .arabic-text {
-        direction: rtl;
-        text-align: right;
-        font-family: 'Noto Sans Arabic', sans-serif;
-        line-height: 1.8;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 # ----------------------
-# Connection Status Check using direct API calls
+# Fast Connection Check
 # ----------------------
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def check_connection_status():
-    """Check connection status for both Qdrant and DeepSeek using direct API calls"""
-    status = {
-        "qdrant": False,
-        "deepseek": False
-    }
+    status = {"qdrant": False, "deepseek": False}
     
-    # Test Qdrant connection using direct API
+    # Quick Qdrant test
     try:
         headers = {"api-key": QDRANT_API_KEY}
-        response = requests.get(f"{QDRANT_URL}/collections/{COLLECTION_NAME}", headers=headers, timeout=5)
-        if response.status_code == 200:
-            status["qdrant"] = True
-    except Exception:
-        status["qdrant"] = False
+        response = requests.get(f"{QDRANT_URL}/collections/{COLLECTION_NAME}", 
+                               headers=headers, timeout=3)
+        status["qdrant"] = response.status_code == 200
+    except:
+        pass
     
-    # Test DeepSeek connection
+    # Quick DeepSeek test
     try:
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        test_data = {
-            "model": "deepseek-chat",
-            "messages": [{"role": "user", "content": "test"}],
-            "max_tokens": 5
-        }
-        
-        response = requests.post(
-            f"{DEEPSEEK_BASE_URL}/chat/completions",
-            headers=headers,
-            json=test_data,
-            timeout=5
-        )
-        
-        if response.status_code == 200:
-            status["deepseek"] = True
-    except Exception:
-        status["deepseek"] = False
-    
-    return status
-
-def show_connection_status():
-    """Display connection status"""
-    status = check_connection_status()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if status["qdrant"]:
-            st.markdown('''
-            <div class="connection-status">
-                🟢 قاعدة البيانات متصلة
-            </div>
-            ''', unsafe_allow_html=True)
-        else:
-            st.markdown('''
-            <div class="connection-status disconnected">
-                🔴 قاعدة البيانات غير متصلة
-            </div>
-            ''', unsafe_allow_html=True)
-    
-    with col2:
-        if status["deepseek"]:
-            st.markdown('''
-            <div class="connection-status">
-                🤖 الذكاء الاصطناعي متصل
-            </div>
-            ''', unsafe_allow_html=True)
-        else:
-            st.markdown('''
-            <div class="connection-status disconnected">
-                ⚠️ الذكاء الاصطناعي غير متاح
-            </div>
-            ''', unsafe_allow_html=True)
+        headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
+        response = requests.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
+                               headers=headers, 
+                               json={"model": "deepseek-chat", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                               timeout=3)
+        status["deepseek"] = response.status_code == 200
+    except:
+        pass
     
     return status
 
 # ----------------------
-# DeepSeek Chat Function
+# Fast Document Search - STRICT DATABASE ONLY
 # ----------------------
-def get_deepseek_response(messages, max_retries=3):
-    """Get response from DeepSeek API"""
-    for attempt in range(max_retries):
-        try:
-            headers = {
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            data = {
-                "model": "deepseek-chat",
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 1000,
-                "stream": False
-            }
-            
-            response = requests.post(
-                f"{DEEPSEEK_BASE_URL}/chat/completions",
-                headers=headers,
-                json=data,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result['choices'][0]['message']['content']
-            else:
-                st.error(f"خطأ في API: {response.status_code}")
-                
-        except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(2)
-                continue
-            else:
-                st.error(f"فشل في الحصول على الاستجابة: {e}")
-    
-    return "عذراً، لم أتمكن من الحصول على استجابة في الوقت الحالي."
-
-# ----------------------
-# Document Search Function using direct API calls
-# ----------------------
-def search_documents_direct_api(query, top_k=5):
-    """Search for relevant documents using Qdrant direct API calls"""
+def search_in_database_only(query, top_k=3):
+    """STRICT: Search ONLY in uploaded Qdrant database"""
     try:
-        # Try to use local embedding if available, otherwise use a simple fallback
+        # Try embedding with fallback
         try:
             from sentence_transformers import SentenceTransformer
             model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
             query_embedding = model.encode([query])[0].tolist()
-        except ImportError:
-            # Fallback: return empty results if no embedding model
-            return []
+        except:
+            return None  # No embedding = no search
         
-        # Search in Qdrant using direct API
-        headers = {
-            "api-key": QDRANT_API_KEY,
-            "Content-Type": "application/json"
-        }
+        # Search in Qdrant database ONLY
+        headers = {"api-key": QDRANT_API_KEY, "Content-Type": "application/json"}
+        search_data = {"vector": query_embedding, "limit": top_k, "with_payload": True}
         
-        search_data = {
-            "vector": query_embedding,
-            "limit": top_k,
-            "with_payload": True
-        }
-        
-        response = requests.post(
-            f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search",
-            headers=headers,
-            json=search_data,
-            timeout=30
-        )
+        response = requests.post(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search",
+                               headers=headers, json=search_data, timeout=10)
         
         if response.status_code == 200:
-            results = response.json()
-            return results.get("result", [])
-        else:
-            return []
+            return response.json().get("result", [])
+        return None
         
     except Exception as e:
-        st.error(f"فشل في البحث: {e}")
-        return []
+        st.error(f"خطأ في البحث: {e}")
+        return None
 
 # ----------------------
-# Main Application
+# STRICT DeepSeek Response - DATABASE ONLY
+# ----------------------
+def get_strict_database_response(context, query):
+    """Get response STRICTLY from database context only"""
+    
+    # VERY STRICT system prompt
+    system_prompt = f"""أنت مساعد ذكي للمرجع الديني الشيخ محمد السند. 
+
+    قواعد صارمة:
+    1. أجب فقط من النصوص المرفقة من قاعدة البيانات
+    2. لا تستخدم أي معلومات من خارج النصوص المرفقة
+    3. إذا لم تجد الإجابة في النصوص المرفقة، قل "لا توجد معلومات في قاعدة البيانات"
+    4. لا تضيف معلومات من معرفتك العامة
+    5. أجب باللغة العربية فقط
+    6. اذكر النص الأصلي عند الإمكان
+
+    النصوص من قاعدة البيانات:
+    {context}
+    """
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"السؤال: {query}\n\nأجب فقط من النصوص المرفقة أعلاه."}
+    ]
+    
+    try:
+        headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+        data = {
+            "model": "deepseek-chat",
+            "messages": messages,
+            "temperature": 0.1,  # Very low temperature for strict responses
+            "max_tokens": 500,   # Shorter responses
+            "stream": False
+        }
+        
+        response = requests.post(f"{DEEPSEEK_BASE_URL}/chat/completions", 
+                               headers=headers, json=data, timeout=15)
+        
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        else:
+            return "خطأ في الحصول على الإجابة"
+            
+    except Exception as e:
+        return f"خطأ: {e}"
+
+# ----------------------
+# Main Fast Application
 # ----------------------
 def main():
     st.set_page_config(
@@ -332,146 +232,121 @@ def main():
         layout="wide"
     )
     
-    # Load Arabic CSS
     load_arabic_css()
     
-    # Header - centered text only
+    # Header 
     st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند - دام ظله</h1>', unsafe_allow_html=True)
     st.markdown('<p class="main-subtitle">محرك بحث الكتب والاستفتاءات</p>', unsafe_allow_html=True)
     
-    # Show connection status
-    connection_status = show_connection_status()
+    # Fast connection check
+    status = check_connection_status()
     
-    # Initialize chat history
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f'''<div class="connection-status {'disconnected' if not status['qdrant'] else ''}">
+        {'🟢 قاعدة البيانات متصلة' if status['qdrant'] else '🔴 قاعدة البيانات غير متصلة'}</div>''', 
+        unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'''<div class="connection-status {'disconnected' if not status['deepseek'] else ''}">
+        {'🤖 الذكاء الاصطناعي متصل' if status['deepseek'] else '⚠️ الذكاء الاصطناعي غير متاح'}</div>''', 
+        unsafe_allow_html=True)
+    
+    # Chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
-    # Display chat history
-    chat_container = st.container()
-    with chat_container:
-        for message in st.session_state.messages:
-            if message["role"] == "user":
-                st.markdown(f'<div class="user-message">👤 {message["content"]}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="bot-message">🤖 {message["content"]}</div>', unsafe_allow_html=True)
-                if "sources" in message:
-                    for source in message["sources"]:
-                        percentage = source.get('percentage', int(source['score'] * 100))
-                        source_name = source["source"].replace('.txt', '').replace('.pdf', '').replace('.docx', '')
-                        st.markdown(f'''
-                        <div class="source-info">
-                            <span class="source-percentage">{percentage}%</span>
-                            📚 المرجع: {source_name}
-                        </div>
-                        ''', unsafe_allow_html=True)
+    # Display messages
+    for message in st.session_state.messages:
+        if message["role"] == "user":
+            st.markdown(f'<div class="user-message">👤 {message["content"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="bot-message">🤖 {message["content"]}</div>', unsafe_allow_html=True)
+            if "sources" in message:
+                for source in message["sources"]:
+                    percentage = source.get('percentage', 0)
+                    source_name = source["source"].replace('.txt', '').replace('.pdf', '').replace('.docx', '')
+                    st.markdown(f'''
+                    <div class="source-info">
+                        <span class="source-percentage">{percentage}%</span>
+                        📚 المرجع: {source_name}
+                    </div>''', unsafe_allow_html=True)
     
-    # Chat input with bigger text area and Enter key support
+    # Input form
     st.markdown('<h3 style="text-align: center; direction: rtl; font-family: \'Noto Sans Arabic\', sans-serif;">💭 اكتب سؤالك هنا:</h3>', unsafe_allow_html=True)
     
-    # Use form for Enter key functionality and bigger text area
     with st.form(key="chat_form", clear_on_submit=True):
-        user_question = st.text_area(
-            "",
-            placeholder="اكتب سؤالك هنا واضغط Ctrl+Enter للإرسال...\n\nمثال: ما هو موضوع الوثيقة الأولى؟\nأو: لخص محتوى الملف الثاني",
-            height=120,
-            key="user_input"
-        )
+        user_question = st.text_area("", placeholder="اكتب سؤالك هنا واضغط Ctrl+Enter للإرسال...", height=120)
         
-        # Submit button (also works with Enter in form)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            submit_button = st.form_submit_button("إرسال السؤال 📤", type="primary", use_container_width=True)
+            submit = st.form_submit_button("إرسال السؤال 📤", type="primary", use_container_width=True)
     
-    # Process user input
-    if submit_button and user_question and user_question.strip():
-        # Check connections before processing
-        if not connection_status["qdrant"]:
-            st.warning("⚠️ قاعدة البيانات غير متصلة. لا يمكن البحث في الوثائق.")
-            return
-            
-        if not connection_status["deepseek"]:
-            st.warning("⚠️ الذكاء الاصطناعي غير متاح. لا يمكن تقديم إجابات ذكية.")
+    # Process question
+    if submit and user_question and user_question.strip():
+        if not status["qdrant"] or not status["deepseek"]:
+            st.error("⚠️ النظام غير متصل بالكامل")
             return
         
-        # Add user message to history
+        # Add user message
         st.session_state.messages.append({"role": "user", "content": user_question.strip()})
         
-        # Search for relevant documents
-        with st.spinner(""):
-            st.markdown('<div class="loading-spinner">🔍 جاري البحث في المراجع والكتب...</div>', unsafe_allow_html=True)
-            search_results = search_documents_direct_api(user_question.strip())
+        # Search ONLY in database
+        with st.spinner("🔍 جاري البحث في قاعدة البيانات..."):
+            search_results = search_in_database_only(user_question.strip())
         
         if search_results:
-            # Prepare context for DeepSeek
+            # Prepare context from database ONLY
             context_texts = []
             sources = []
             
             for result in search_results:
                 payload = result.get("payload", {})
-                context_texts.append(payload.get('text', ''))
-                sources.append({
-                    'source': payload.get('source', 'مجهول'),
-                    'score': result.get('score', 0.0),
-                    'percentage': min(100, int(result.get('score', 0.0) * 100))
+                text = payload.get('text', '')
+                if text:  # Only add non-empty texts
+                    context_texts.append(text)
+                    sources.append({
+                        'source': payload.get('source', 'مجهول'),
+                        'score': result.get('score', 0.0),
+                        'percentage': min(100, int(result.get('score', 0.0) * 100))
+                    })
+            
+            if context_texts:
+                context = "\n---\n".join(context_texts)
+                
+                # Get STRICT response from database only
+                with st.spinner("🤖 جاري تحضير الإجابة من قاعدة البيانات..."):
+                    response = get_strict_database_response(context, user_question.strip())
+                
+                # Add response with sources
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": response,
+                    "sources": sources
                 })
-            
-            context = "\n\n".join(context_texts)
-            
-            # Prepare messages for DeepSeek
-            system_prompt = """أنت مساعد ذكي متخصص في الإجابة على الأسئلة باللغة العربية بناءً على الوثائق المقدمة.
-            
-            تعليمات مهمة:
-            1. أجب باللغة العربية فقط
-            2. استخدم المعلومات من الوثائق المقدمة فقط
-            3. كن دقيقاً ومفيداً
-            4. إذا لم تجد الإجابة في الوثائق، قل ذلك بوضوح
-            5. اذكر المصادر عند الإمكان
-            6. اجعل إجاباتك مفصلة ومفيدة
-            """
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"السياق من الوثائق:\n{context}\n\nالسؤال: {user_question.strip()}"}
-            ]
-            
-            # Get response from DeepSeek
-            with st.spinner(""):
-                st.markdown('<div class="loading-spinner">🤖 جاري تحضير الإجابة الشرعية...</div>', unsafe_allow_html=True)
-                bot_response = get_deepseek_response(messages)
-            
-            # Add bot response to history
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": bot_response,
-                "sources": sources
-            })
+            else:
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": "لا توجد معلومات ذات صلة في قاعدة البيانات المحملة للإجابة على سؤالك."
+                })
         else:
-            # No relevant documents found
             st.session_state.messages.append({
                 "role": "assistant", 
-                "content": "عذراً، لم أجد معلومات ذات صلة في الوثائق المحملة للإجابة على سؤالك. تأكد من أن سؤالك متعلق بمحتوى الوثائق المرفوعة."
+                "content": "لم أتمكن من البحث في قاعدة البيانات. تأكد من الاتصال."
             })
         
-        # Rerun to update chat
         st.rerun()
     
-    # Chat management buttons
+    # Management buttons
     col1, col2 = st.columns(2)
-    
     with col1:
         if st.button("مسح المحادثة 🗑️"):
             st.session_state.messages = []
             st.rerun()
-    
     with col2:
-        if st.button("إحصائيات المحادثة 📊"):
-            total_messages = len(st.session_state.messages)
-            user_messages = len([m for m in st.session_state.messages if m["role"] == "user"])
-            bot_messages = len([m for m in st.session_state.messages if m["role"] == "assistant"])
-            st.info(f"إجمالي الرسائل: {total_messages} | أسئلتك: {user_messages} | إجابات المساعد: {bot_messages}")
+        if st.button("إحصائيات 📊"):
+            total = len(st.session_state.messages)
+            user_msgs = len([m for m in st.session_state.messages if m["role"] == "user"])
+            st.info(f"إجمالي: {total} | أسئلة: {user_msgs}")
 
-# ----------------------
-# Run the Application
-# ----------------------
 if __name__ == "__main__":
     main()
