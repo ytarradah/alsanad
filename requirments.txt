@@ -1,0 +1,7 @@
+streamlit
+qdrant-client
+sentence-transformers
+pandas
+requests
+torch
+transformers
