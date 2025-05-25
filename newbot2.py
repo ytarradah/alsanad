@@ -3,8 +3,6 @@ import time
 from datetime import datetime
 import json
 import requests
-from qdrant_client import QdrantClient
-from sentence_transformers import SentenceTransformer
 import pandas as pd
 
 # ----------------------
@@ -157,41 +155,20 @@ def load_arabic_css():
     """, unsafe_allow_html=True)
 
 # ----------------------
-# Initialize Components
-# ----------------------
-@st.cache_resource
-def init_qdrant_client():
-    try:
-        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-        return client
-    except Exception as e:
-        st.error(f"فشل في الاتصال بقاعدة البيانات: {e}")
-        return None
-
-@st.cache_resource
-def init_embedding_model():
-    try:
-        model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-        return model
-    except Exception as e:
-        st.error(f"فشل في تحميل نموذج التضمين: {e}")
-        return None
-
-# ----------------------
-# Connection Status Check
+# Connection Status Check using direct API calls
 # ----------------------
 def check_connection_status():
-    """Check connection status for both Qdrant and DeepSeek"""
+    """Check connection status for both Qdrant and DeepSeek using direct API calls"""
     status = {
         "qdrant": False,
         "deepseek": False
     }
     
-    # Test Qdrant connection
+    # Test Qdrant connection using direct API
     try:
-        qdrant_client = init_qdrant_client()
-        if qdrant_client:
-            collection_info = qdrant_client.get_collection(COLLECTION_NAME)
+        headers = {"api-key": QDRANT_API_KEY}
+        response = requests.get(f"{QDRANT_URL}/collections/{COLLECTION_NAME}", headers=headers, timeout=5)
+        if response.status_code == 200:
             status["qdrant"] = True
     except Exception:
         status["qdrant"] = False
@@ -302,31 +279,44 @@ def get_deepseek_response(messages, max_retries=3):
     return "عذراً، لم أتمكن من الحصول على استجابة في الوقت الحالي."
 
 # ----------------------
-# Document Search Function
+# Document Search Function using direct API calls
 # ----------------------
-def search_documents(query, top_k=5):
-    """Search for relevant documents using vector similarity"""
+def search_documents_direct_api(query, top_k=5):
+    """Search for relevant documents using Qdrant direct API calls"""
     try:
-        # Generate embedding for the query
-        embedding_model = init_embedding_model()
-        if not embedding_model:
+        # Try to use local embedding if available, otherwise use a simple fallback
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+            query_embedding = model.encode([query])[0].tolist()
+        except ImportError:
+            # Fallback: return empty results if no embedding model
             return []
         
-        query_embedding = embedding_model.encode([query])[0].tolist()
+        # Search in Qdrant using direct API
+        headers = {
+            "api-key": QDRANT_API_KEY,
+            "Content-Type": "application/json"
+        }
         
-        # Search in Qdrant
-        qdrant_client = init_qdrant_client()
-        if not qdrant_client:
-            return []
+        search_data = {
+            "vector": query_embedding,
+            "limit": top_k,
+            "with_payload": True
+        }
         
-        search_results = qdrant_client.search(
-            collection_name=COLLECTION_NAME,
-            query_vector=query_embedding,
-            limit=top_k,
-            with_payload=True
+        response = requests.post(
+            f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search",
+            headers=headers,
+            json=search_data,
+            timeout=30
         )
         
-        return search_results
+        if response.status_code == 200:
+            results = response.json()
+            return results.get("result", [])
+        else:
+            return []
         
     except Exception as e:
         st.error(f"فشل في البحث: {e}")
@@ -337,10 +327,9 @@ def search_documents(query, top_k=5):
 # ----------------------
 def main():
     st.set_page_config(
-        page_title="المساعد الذكي للوثائق العربية",
-        page_icon="🤖",
-        layout="wide",
-        initial_sidebar_state="expanded"
+        page_title="موقع المرجع الديني الشيخ محمد السند",
+        page_icon="🕌",
+        layout="wide"
     )
     
     # Load Arabic CSS
@@ -410,7 +399,7 @@ def main():
         # Search for relevant documents
         with st.spinner(""):
             st.markdown('<div class="loading-spinner">🔍 جاري البحث في المراجع والكتب...</div>', unsafe_allow_html=True)
-            search_results = search_documents(user_question.strip())
+            search_results = search_documents_direct_api(user_question.strip())
         
         if search_results:
             # Prepare context for DeepSeek
@@ -418,11 +407,12 @@ def main():
             sources = []
             
             for result in search_results:
-                context_texts.append(result.payload.get('text', ''))
+                payload = result.get("payload", {})
+                context_texts.append(payload.get('text', ''))
                 sources.append({
-                    'source': result.payload.get('source', 'مجهول'),
-                    'score': result.score,
-                    'percentage': min(100, int(result.score * 100))  # Convert to percentage
+                    'source': payload.get('source', 'مجهول'),
+                    'score': result.get('score', 0.0),
+                    'percentage': min(100, int(result.get('score', 0.0) * 100))
                 })
             
             context = "\n\n".join(context_texts)
