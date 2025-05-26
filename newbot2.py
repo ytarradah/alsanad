@@ -1,23 +1,33 @@
 import streamlit as st
 import time
+from datetime import datetime
 import json
 import requests
-import asyncio
-import concurrent.futures
+from qdrant_client import QdrantClient
+from sentence_transformers import SentenceTransformer
+import pandas as pd
+from openai import OpenAI
+import google.generativeai as genai
 
 # ----------------------
 # Configuration
 # ----------------------
 QDRANT_URL = "https://993e7bbb-cbe2-4b82-b672-90c4aed8585e.europe-west3-0.gcp.cloud.qdrant.io:6333"
-QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.Dw82gEuSqeeloMVxaGp48Q2oU-W3NjLSibtM-pqRHzk"
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.qRNtWMTIR32MSM6KUe3lE5qJ0fS5KgyAf86EKQgQ1FQ"
 COLLECTION_NAME = "arabic_documents_384"
+
+# API Keys
+OPENAI_API_KEY = "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"
 DEEPSEEK_API_KEY = "sk-14f267781a6f474a9d0ec8240383dae4"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-GEMINI_API_KEY = "AIzaSyAHlTww82Qw5PdFDPjKQIwA7f0FRUO-nFQ"
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+GEMINI_API_KEY = "AIzaSyASlapu6AYYwOQAJJ3v-2FSKHnxIOZoPbY"  # New API key
+
+# Initialize APIs
+client = OpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 # ----------------------
-# Ultra Fast CSS
+# Arabic CSS Styling
 # ----------------------
 def load_arabic_css():
     st.markdown("""
@@ -28,21 +38,47 @@ def load_arabic_css():
         text-align: center;
         color: #2E8B57;
         font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 2.8rem;
+        font-size: 2.5rem;
         font-weight: 700;
-        margin: 2rem 0;
+        margin-bottom: 0.5rem;
         direction: rtl;
-        line-height: 1.4;
     }
     
-    .main-subtitle {
+    .sub-header {
         text-align: center;
-        color: #6c757d;
+        color: #666;
         font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 1.3rem;
-        margin-bottom: 2rem;
+        font-size: 1.2rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
         direction: rtl;
-        font-style: italic;
+    }
+    
+    .status-box {
+        background: #f0f2f6;
+        padding: 0.5rem 1rem;
+        border-radius: 10px;
+        margin: 1rem auto;
+        text-align: center;
+        font-family: 'Noto Sans Arabic', sans-serif;
+        direction: rtl;
+        max-width: 400px;
+    }
+    
+    .status-active {
+        color: #28a745;
+        font-weight: bold;
+    }
+    
+    .status-inactive {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    
+    .chat-container {
+        direction: rtl;
+        text-align: right;
+        font-family: 'Noto Sans Arabic', sans-serif;
     }
     
     .user-message {
@@ -54,11 +90,13 @@ def load_arabic_css():
         direction: rtl;
         text-align: right;
         font-family: 'Noto Sans Arabic', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 500;
         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
     
     .bot-message {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        background: linear-gradient(135deg, #5DADE2 0%, #3498DB 100%);
         color: white;
         padding: 1rem;
         border-radius: 15px 15px 15px 5px;
@@ -66,380 +104,381 @@ def load_arabic_css():
         direction: rtl;
         text-align: right;
         font-family: 'Noto Sans Arabic', sans-serif;
+        font-size: 1.1rem;
+        font-weight: 500;
+        line-height: 1.8;
         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
     
-    .source-compact {
-        background: #f8f9fa;
-        padding: 0.6rem;
+    .source-container {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 1rem;
+        direction: rtl;
+    }
+    
+    .source-info {
+        background: #f0f2f6;
+        padding: 0.5rem;
         border-radius: 10px;
-        margin-top: 0.6rem;
+        font-size: 0.85rem;
+        color: #666;
         direction: rtl;
         text-align: right;
         font-family: 'Noto Sans Arabic', sans-serif;
-        border-left: 3px solid #28a745;
-        font-size: 0.9rem;
+        border: 1px solid #ddd;
     }
     
-    .source-badge {
-        background: #28a745;
-        color: white;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-left: 0.3rem;
+    .api-used {
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 0.3rem 0.6rem;
+        border-radius: 5px;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
         display: inline-block;
-    }
-    
-    .ai-badge {
-        background: #6f42c1;
-        color: white;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        display: inline-block;
-    }
-    
-    .status-fast {
-        background: #28a745;
-        color: white;
-        padding: 0.6rem 1.2rem;
-        border-radius: 8px;
-        margin: 0.3rem;
-        direction: rtl;
-        text-align: center;
         font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 1rem;
-        font-weight: 500;
-        display: inline-block;
-        min-width: 140px;
-    }
-    
-    .status-fast.offline {
-        background: #dc3545;
-    }
-    
-    .status-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 1rem;
-        margin: 1.5rem 0;
-        flex-wrap: wrap;
-    }
-    
-    .loading-message {
-        text-align: center;
-        color: #2E8B57;
-        font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 1.3rem;
-        font-weight: 600;
-        margin: 1.5rem 0;
-        direction: rtl;
-        padding: 1rem;
-        background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
-        border-radius: 12px;
-        border: 2px solid #28a745;
-        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
     }
     
     .stTextArea > div > div > textarea {
         direction: rtl;
         text-align: right;
         font-family: 'Noto Sans Arabic', sans-serif;
-        font-size: 18px !important;
-        min-height: 120px !important;
-        padding: 20px !important;
-        line-height: 1.6 !important;
+        font-size: 1.1rem;
+        min-height: 100px !important;
+    }
+    
+    .stSelectbox > div > div > select {
+        direction: rtl;
+        text-align: right;
+        font-family: 'Noto Sans Arabic', sans-serif;
+    }
+    
+    .search-button {
+        text-align: center;
+        margin-top: 1rem;
+    }
+    
+    div[data-testid="stButton"] > button {
+        width: 200px;
+        margin: 0 auto;
+        display: block;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # ----------------------
-# SUPER FAST Status Check (no caching)
+# Database Status Check
 # ----------------------
-def quick_status_check():
-    """Ultra quick status check - 1 second max each"""
-    status = {"qdrant": False, "deepseek": False, "gemini": False}
-    
-    # Test Qdrant (1 sec timeout)
+@st.cache_data(ttl=60)  # Cache for 1 minute
+def check_database_status():
+    """Check if Qdrant database is connected and active"""
     try:
-        response = requests.get(f"{QDRANT_URL}/collections/{COLLECTION_NAME}", 
-                               headers={"api-key": QDRANT_API_KEY}, timeout=1)
-        status["qdrant"] = response.status_code == 200
-    except:
-        status["qdrant"] = False
-    
-    # Test DeepSeek (1 sec timeout)
-    try:
-        response = requests.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
-                               headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-                               json={"model": "deepseek-chat", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
-                               timeout=1)
-        status["deepseek"] = response.status_code == 200
-    except:
-        status["deepseek"] = False
-    
-    # Test Gemini (1 sec timeout)
-    try:
-        response = requests.post(f"{GEMINI_BASE_URL}?key={GEMINI_API_KEY}",
-                               json={"contents": [{"parts": [{"text": "hi"}]}]}, timeout=1)
-        status["gemini"] = response.status_code == 200
-    except:
-        status["gemini"] = False
-    
-    return status
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        collection_info = client.get_collection(COLLECTION_NAME)
+        point_count = collection_info.points_count
+        return True, point_count
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        return False, 0
 
 # ----------------------
-# ENHANCED Database Search with better accuracy
+# Initialize Components
 # ----------------------
-def enhanced_search(query):
-    """More accurate database search with better matching"""
+@st.cache_resource
+def init_qdrant_client():
     try:
-        # Quick embedding
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-            query_embedding = model.encode([query])[0].tolist()
-        except:
-            return None
-        
-        # Enhanced search with more results for better accuracy
-        search_data = {
-            "vector": query_embedding, 
-            "limit": 5,  # More results for better accuracy
-            "with_payload": True,
-            "score_threshold": 0.3  # Only return results above 30% similarity
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        return client
+    except Exception as e:
+        st.error(f"فشل في الاتصال بقاعدة البيانات: {e}")
+        return None
+
+@st.cache_resource
+def init_embedding_model():
+    try:
+        model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+        return model
+    except Exception as e:
+        st.error(f"فشل في تحميل نموذج التضمين: {e}")
+        return None
+
+# ----------------------
+# API Response Functions
+# ----------------------
+def get_openai_response(messages):
+    """Get response from OpenAI API"""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0.3,  # Lower temperature for more focused responses
+            max_tokens=1500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"خطأ في OpenAI API: {e}")
+        return "عذراً، لم أتمكن من الحصول على استجابة من OpenAI."
+
+def get_deepseek_response(messages):
+    """Get response from DeepSeek API"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
         }
         
-        response = requests.post(f"{QDRANT_URL}/collections/{COLLECTION_NAME}/points/search",
-                               headers={"api-key": QDRANT_API_KEY, "Content-Type": "application/json"},
-                               json=search_data, timeout=8)
+        data = {
+            "model": "deepseek-chat",
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 1500,
+            "stream": False
+        }
+        
+        response = requests.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
         
         if response.status_code == 200:
-            results = response.json().get("result", [])
-            # Filter results with decent scores
-            filtered_results = [r for r in results if r.get('score', 0) > 0.3]
-            return filtered_results if filtered_results else results[:3]
-        return None
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        else:
+            st.error(f"خطأ في DeepSeek API: {response.status_code}")
+            return "عذراً، لم أتمكن من الحصول على استجابة من DeepSeek."
+            
+    except Exception as e:
+        st.error(f"فشل في الحصول على الاستجابة: {e}")
+        return "عذراً، لم أتمكن من الحصول على استجابة في الوقت الحالي."
+
+def get_gemini_response(messages):
+    """Get response from Gemini API"""
+    try:
+        # Try different model names
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                
+                # Format messages for Gemini
+                prompt = ""
+                for msg in messages:
+                    if msg["role"] == "system":
+                        prompt += f"النظام: {msg['content']}\n\n"
+                    elif msg["role"] == "user":
+                        prompt += f"المستخدم: {msg['content']}\n\n"
+                
+                response = model.generate_content(prompt)
+                return response.text
+            except:
+                continue
+                
+        # If all models fail
+        st.error("فشل في استخدام جميع نماذج Gemini المتاحة")
+        return "عذراً، لم أتمكن من الحصول على استجابة من Gemini."
         
     except Exception as e:
-        print(f"Search error: {e}")
-        return None
+        st.error(f"خطأ في Gemini API: {e}")
+        return "عذراً، لم أتمكن من الحصول على استجابة من Gemini."
 
 # ----------------------
-# IMPROVED AI Response with better context handling
+# Document Search Function
 # ----------------------
-def get_enhanced_ai_response(context, query):
-    """Get better AI response with improved context handling"""
-    
-    # Better prompt for more accurate responses
-    prompt = f"""أنت مساعد ذكي للمرجع الديني الشيخ محمد السند. اقرأ النصوص التالية بعناية:
-
-النصوص من قاعدة البيانات:
-{context}
-
-السؤال: {query}
-
-تعليمات:
-1. ابحث في النصوص أعلاه عن إجابة للسؤال
-2. إذا وجدت معلومات متعلقة بالسؤال، أجب بناءً عليها
-3. إذا لم تجد إجابة واضحة، قل "لم أجد معلومات كافية في المراجع المتاحة"
-4. أجب باللغة العربية واستشهد من النصوص
-5. كن دقيقاً ومفصلاً في الإجابة"""
-    
-    def try_deepseek():
-        try:
-            response = requests.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
-                                   headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
-                                   json={"model": "deepseek-chat", 
-                                        "messages": [{"role": "user", "content": prompt}], 
-                                        "temperature": 0.1,  # Lower temperature for more accuracy
-                                        "max_tokens": 600},  # More tokens for detailed answers
-                                   timeout=10)
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content'], "DeepSeek"
-        except Exception as e:
-            print(f"DeepSeek error: {e}")
-        return None, None
-    
-    def try_gemini():
-        try:
-            response = requests.post(f"{GEMINI_BASE_URL}?key={GEMINI_API_KEY}",
-                                   json={"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 600}},
-                                   timeout=10)
-            if response.status_code == 200:
-                return response.json()['candidates'][0]['content']['parts'][0]['text'], "Gemini"
-        except Exception as e:
-            print(f"Gemini error: {e}")
-        return None, None
-    
-    # Try both with longer timeout for better accuracy
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_deepseek = executor.submit(try_deepseek)
-        future_gemini = executor.submit(try_gemini)
+def search_documents(query, top_k=10):  # Increased to search more documents
+    """Search for relevant documents using vector similarity"""
+    try:
+        embedding_model = init_embedding_model()
+        if not embedding_model:
+            return []
         
-        try:
-            for future in concurrent.futures.as_completed([future_deepseek, future_gemini], timeout=12):
-                result, ai_name = future.result()
-                if result:
-                    return result, ai_name
-        except:
-            pass
-    
-    return "لم أتمكن من الحصول على إجابة من النظم المتاحة", "Error"
+        query_embedding = embedding_model.encode([query])[0].tolist()
+        
+        qdrant_client = init_qdrant_client()
+        if not qdrant_client:
+            return []
+        
+        # Search with higher limit to get more comprehensive results
+        search_results = qdrant_client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_embedding,
+            limit=top_k,
+            with_payload=True,
+            score_threshold=0.3  # Lower threshold to include more results
+        )
+        
+        return search_results
+        
+    except Exception as e:
+        st.error(f"فشل في البحث: {e}")
+        return []
 
 # ----------------------
-# MAIN ULTRA FAST APP
+# Main Application
 # ----------------------
 def main():
     st.set_page_config(
-        page_title="موقع المرجع الديني الشيخ محمد السند",
+        page_title="موقع المرجع الديني الشيخ محمد السند - دام ظله",
         page_icon="🕌",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="collapsed"
     )
     
+    # Load Arabic CSS
     load_arabic_css()
     
     # Header
     st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند - دام ظله</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="main-subtitle">محرك بحث الكتب والاستفتاءات</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">محرك بحث الكتب والاستفتاءات</p>', unsafe_allow_html=True)
     
-    # Super fast status check
-    if "last_status_check" not in st.session_state or time.time() - st.session_state.last_status_check > 30:
-        st.session_state.status = quick_status_check()
-        st.session_state.last_status_check = time.time()
+    # Database Status
+    db_status, vector_count = check_database_status()
+    if db_status:
+        st.markdown(f'<div class="status-box">حالة قاعدة البيانات: <span class="status-active">متصل ✓</span> | عدد المتجهات: {vector_count:,}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="status-box">حالة قاعدة البيانات: <span class="status-inactive">غير متصل ✗</span></div>', unsafe_allow_html=True)
     
-    status = st.session_state.status
+    # Search Engine Selection
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        search_engine = st.selectbox(
+            "اختر محرك البحث الذكي",
+            ["OpenAI API", "DeepSeek", "Gemini"],
+            index=0,
+            key="search_engine"
+        )
     
-    # Centered and bigger status display
-    st.markdown('<div class="status-container">', unsafe_allow_html=True)
-    st.markdown(f'''
-    <div class="status-fast {'offline' if not status['qdrant'] else ''}">🟢 قاعدة البيانات</div>
-    <div class="status-fast {'offline' if not status['deepseek'] else ''}">🚀 DeepSeek</div>
-    <div class="status-fast {'offline' if not status['gemini'] else ''}">🤖 Gemini</div>
-    ''', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Chat history
+    # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
-    # Display messages
-    for message in st.session_state.messages:
-        if message["role"] == "user":
-            st.markdown(f'<div class="user-message">👤 {message["content"]}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="bot-message">🤖 {message["content"]}</div>', unsafe_allow_html=True)
-            
-            # AI indicator
-            if "ai_used" in message and message["ai_used"] != "Error":
-                st.markdown(f'<div class="ai-badge">{"🚀" if message["ai_used"] == "DeepSeek" else "🤖"} {message["ai_used"]}</div>', unsafe_allow_html=True)
-            
-            # Compact sources (remove duplicates)
-            if "sources" in message and message["sources"]:
-                unique_sources = {}
-                for source in message["sources"]:
-                    src_name = source["source"].replace('.txt', '').replace('.pdf', '').replace('.docx', '')
-                    if src_name not in unique_sources or source["percentage"] > unique_sources[src_name]:
-                        unique_sources[src_name] = source["percentage"]
+    # Display chat history
+    chat_container = st.container()
+    with chat_container:
+        for message in st.session_state.messages:
+            if message["role"] == "user":
+                st.markdown(f'<div class="user-message">👤 {message["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="bot-message">🤖 {message["content"]}</div>', unsafe_allow_html=True)
                 
-                source_text = " ".join([f'<span class="source-badge">{perc}% {name}</span>' 
-                                       for name, perc in unique_sources.items()])
-                st.markdown(f'<div class="source-compact">📚 {source_text}</div>', unsafe_allow_html=True)
+                # Display API used
+                if "api_used" in message:
+                    st.markdown(f'<span class="api-used">تم استخدام: {message["api_used"]}</span>', unsafe_allow_html=True)
+                
+                # Display sources in grid
+                if "sources" in message and message["sources"]:
+                    st.markdown('<div class="source-container">', unsafe_allow_html=True)
+                    cols = st.columns(3)
+                    for idx, source in enumerate(message["sources"][:6]):  # Show up to 6 sources
+                        with cols[idx % 3]:
+                            percentage = source["score"] * 100
+                            st.markdown(
+                                f'<div class="source-info">📄 المصدر: {source["source"]}<br>التطابق: {percentage:.1f}%</div>', 
+                                unsafe_allow_html=True
+                            )
+                    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Input
-    st.markdown('<h3 style="text-align: center; direction: rtl; font-family: \'Noto Sans Arabic\', sans-serif;">💭 اكتب سؤالك هنا:</h3>', unsafe_allow_html=True)
+    # Chat input with larger text area
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    with st.form(key="fast_chat", clear_on_submit=True):
-        user_question = st.text_area("", placeholder="اكتب سؤالك واضغط Ctrl+Enter...", height=120)
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            submit = st.form_submit_button("إرسال سريع ⚡", type="primary", use_container_width=True)
+    # Create centered columns for input
+    col1, col2, col3 = st.columns([1, 3, 1])
     
-    # Process
-    if submit and user_question and user_question.strip():
-        if not status["qdrant"]:
-            st.error("⚠️ قاعدة البيانات غير متاحة")
-            return
+    with col2:
+        user_question = st.text_area(
+            "اسأل سؤالك هنا...",
+            placeholder="اكتب سؤالك هنا... مثال: ما هو حكم الصلاة في السفر؟",
+            key="user_input",
+            height=100
+        )
         
-        if not (status["deepseek"] or status["gemini"]):
-            st.error("⚠️ لا يوجد ذكاء اصطناعي متاح")
-            return
+        # Centered search button
+        st.markdown('<div class="search-button">', unsafe_allow_html=True)
+        send_button = st.button("🔍 بحث", type="primary", use_container_width=False)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Process user input
+    if send_button and user_question:
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": user_question})
         
-        # Add user message
-        st.session_state.messages.append({"role": "user", "content": user_question.strip()})
-        
-        # Show loading message for search
-        search_placeholder = st.empty()
-        search_placeholder.markdown('<div class="loading-message">🔍 جاري البحث في قاعدة البيانات...</div>', unsafe_allow_html=True)
-        
-        # Enhanced search with better accuracy
-        search_results = enhanced_search(user_question.strip())
-        search_placeholder.empty()  # Remove search message
+        # Search for relevant documents
+        with st.spinner("جاري البحث في جميع الكتب والاستفتاءات..."):
+            search_results = search_documents(user_question, top_k=10)
         
         if search_results:
-            # Show loading message for AI response
-            ai_placeholder = st.empty()
-            ai_placeholder.markdown('<div class="loading-message">🤖 جاري تحضير الإجابة من المراجع...</div>', unsafe_allow_html=True)
-            
-            # Better context preparation
+            # Prepare context for AI
             context_texts = []
             sources = []
             
+            # Use more results for context
             for result in search_results:
-                payload = result.get("payload", {})
-                text = payload.get('text', '')
-                if text:
-                    context_texts.append(text)  # Keep full text for better accuracy
-                    sources.append({
-                        'source': payload.get('source', 'مجهول'),
-                        'percentage': min(100, int(result.get('score', 0.0) * 100))
-                    })
+                context_texts.append(result.payload.get('text', ''))
+                sources.append({
+                    'source': result.payload.get('source', 'مجهول'),
+                    'score': result.score
+                })
             
-            if context_texts:
-                context = "\n\n---\n\n".join(context_texts)
-                
-                # Get enhanced AI response
-                response, ai_used = get_enhanced_ai_response(context, user_question.strip())
-                ai_placeholder.empty()  # Remove AI loading message
-                
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": response,
-                    "sources": sources,
-                    "ai_used": ai_used
-                })
-            else:
-                ai_placeholder.empty()
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "content": "لا توجد معلومات مناسبة في قاعدة البيانات",
-                    "ai_used": "System"
-                })
-        else:
+            context = "\n\n".join(context_texts)
+            
+            # Prepare messages for AI with stricter system prompt
+            system_prompt = """أنت مساعد ذكي متخصص في الإجابة على الأسئلة الدينية والشرعية باللغة العربية بناءً على كتب واستفتاءات المرجع الديني الشيخ محمد السند فقط.
+            
+            قواعد صارمة جداً:
+            1. استخدم فقط المعلومات الموجودة في النصوص المقدمة - لا تضف أي معلومات من خارج هذه النصوص
+            2. إذا لم تجد الإجابة الكاملة في النصوص المقدمة، قل "لم أجد إجابة كافية في المصادر المتاحة"
+            3. لا تستنتج أو تخمن أو تضيف معلومات غير موجودة في النصوص
+            4. اقتبس من النصوص المقدمة مباشرة عند الإمكان
+            5. أجب باللغة العربية الفصحى فقط
+            6. كن دقيقاً جداً في نقل الأحكام الشرعية كما هي في المصادر
+            7. إذا كانت الإجابة موجودة جزئياً، اذكر ما وجدته واذكر أن هناك تفاصيل أخرى قد تكون مطلوبة
+            """
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"المصادر المتاحة من كتب واستفتاءات الشيخ محمد السند:\n{context}\n\nالسؤال: {user_question}\n\nأجب فقط بناءً على المصادر المقدمة أعلاه."}
+            ]
+            
+            # Get response based on selected engine
+            with st.spinner(f"جاري تحضير الإجابة باستخدام {search_engine}..."):
+                if search_engine == "OpenAI API":
+                    bot_response = get_openai_response(messages)
+                elif search_engine == "DeepSeek":
+                    bot_response = get_deepseek_response(messages)
+                else:  # Gemini
+                    bot_response = get_gemini_response(messages)
+            
+            # Add bot response to history
             st.session_state.messages.append({
                 "role": "assistant", 
-                "content": "لم أتمكن من البحث في قاعدة البيانات أو لا توجد نتائج مطابقة",
-                "ai_used": "System"
+                "content": bot_response,
+                "sources": sources[:6],  # Show top 6 sources
+                "api_used": search_engine
+            })
+        else:
+            # No relevant documents found
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": "عذراً، لم أجد معلومات ذات صلة في كتب واستفتاءات الشيخ محمد السند للإجابة على سؤالك. يرجى إعادة صياغة السؤال أو السؤال عن موضوع آخر.",
+                "api_used": search_engine
             })
         
+        # Rerun to update chat
         st.rerun()
     
-    # Quick management
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ مسح"):
+    # Clear chat button
+    col1, col2, col3 = st.columns([1, 3, 1])
+    with col2:
+        if st.button("🗑️ مسح المحادثة", use_container_width=True):
             st.session_state.messages = []
             st.rerun()
-    with col2:
-        if st.button("📊 عدد"):
-            st.info(f"الرسائل: {len(st.session_state.messages)}")
 
+# ----------------------
+# Run the Application
+# ----------------------
 if __name__ == "__main__":
     main()
