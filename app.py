@@ -158,9 +158,9 @@ def init_embedding_model_resource():
 # ----------------------
 def comprehensive_search(query, max_results=50):
     embedding_model = init_embedding_model_resource()
-    if not embedding_model: return [], "فشل تحميل نموذج التضمين."
+    if not embedding_model: return [], "فشل تحميل نموذج التضمين.", [] # Added empty list for initial_search_details
     qdrant_c = init_qdrant_client_resource()
-    if not qdrant_c: return [], "فشل الاتصال بـ Qdrant."
+    if not qdrant_c: return [], "فشل الاتصال بـ Qdrant.", [] # Added empty list for initial_search_details
     try:
         print(f"Query: '{query}', Model: {type(embedding_model)}")
         query_embedding = embedding_model.encode([query])[0].tolist()
@@ -170,8 +170,12 @@ def comprehensive_search(query, max_results=50):
             collection_name=COLLECTION_NAME, query_vector=query_embedding,
             limit=max_results, with_payload=True, score_threshold=score_thresh
         )
-        # Store detailed search results for debugging
-        initial_search_details = [{"id": sr.id, "score": sr.score, "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A', "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''} for sr in search_results_qdrant]
+        initial_search_details = []
+        if search_results_qdrant: # Check if search_results_qdrant is not None
+            initial_search_details = [{"id": sr.id, "score": sr.score, 
+                                    "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A', 
+                                    "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''} 
+                                    for sr in search_results_qdrant]
 
         search_info = f"البحث الأساسي: وجدت {len(search_results_qdrant)} نتيجة بعتبة {score_thresh} لـ '{COLLECTION_NAME}'."
         
@@ -191,7 +195,7 @@ def comprehensive_search(query, max_results=50):
             final_results = sorted(combined, key=lambda x: x.score, reverse=True)[:max_results]
             search_info += f" | بعد الكلمات المفتاحية: {len(final_results)} نتيجة."
         
-        return final_results, search_info, initial_search_details # Return detailed initial results
+        return final_results, search_info, initial_search_details 
     except Exception as e:
         print(f"Error in comprehensive_search: {e}")
         err_content = str(e)
@@ -205,8 +209,8 @@ def comprehensive_search(query, max_results=50):
 # API Response Functions
 # ----------------------
 def prepare_llm_messages(user_question, context, context_info):
-    system_prompt = "أنت مساعد للبحث في كتب واستفتاءات الشيخ محمد السند فقط...\n1. أجب فقط من النصوص المعطاة...\n2. إذا لم تجد الإجابة الكاملة، قل: \"لم أجد إجابة كافية...\"\n3. ممنوع إضافة أي معلومة من خارج النصوص...\n4. اقتبس مباشرة...\n5. إذا وجدت إجابة جزئية، اذكرها...\n6. هدفك الدقة والموثوقية...\n7. إذا كانت النصوص لا تحتوي على إجابة، لا تحاول استنتاج..."
-    user_content = (f"السؤال: {user_question}\n\nالمصادر المتاحة:\n{context}\n\nمعلومات السياق: {context_info}\n\nالتعليمات: أجب بناءً على النصوص أعلاه فقط.")
+    system_prompt = "أنت مساعد للبحث في كتب واستفتاءات الشيخ محمد السند فقط.\nقواعد حتمية لا يمكن تجاوزها:\n1. أجب فقط من النصوص المعطاة أدناه (\"المصادر المتاحة\") - لا استثناءات.\n2. إذا لم تجد الإجابة الكاملة في النصوص، قل بوضوح: \"لم أجد إجابة كافية في المصادر المتاحة بخصوص هذا السؤال.\"\n3. ممنوع منعاً باتاً إضافة أي معلومة من خارج النصوص المعطاة. لا تستخدم معلوماتك العامة أو معرفتك السابقة.\n4. اقتبس مباشرة من النصوص عند الإجابة قدر الإمكان، مع الإشارة إلى المصدر إذا كان متاحاً في النص (مثال: [نص ١]).\n5. إذا وجدت إجابة جزئية، اذكرها وأوضح أنها غير كاملة أو تغطي جانباً من السؤال.\n6. هدفك هو تقديم إجابة دقيقة وموثوقة بناءً على ما هو متوفر في النصوص فقط.\n7. إذا كانت النصوص لا تحتوي على إجابة، لا تحاول استنتاج أو تخمين الإجابة.\nتذكر: أي معلومة ليست في النصوص أدناه = لا تذكرها أبداً. كن دقيقاً ومقتصراً على المصادر."
+    user_content = (f"السؤال المطروح: {user_question}\n\nالمصادر المتاحة من قاعدة البيانات فقط (أجب بناءً عليها حصراً):\n{context}\n\nمعلومات إضافية عن السياق: {context_info}\n\nالتعليمات: يرجى تقديم إجابة بناءً على النصوص أعلاه فقط. إذا لم تكن الإجابة موجودة، وضح ذلك.")
     return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
 
 def get_openai_response(messages, max_tokens=2000):
@@ -289,7 +293,7 @@ def main():
         s_depth_opts = ["بحث سريع (10)", "بحث متوسط (25)", "بحث شامل (50)"]
         s_depth = st.radio("مستوى البحث:", s_depth_opts, index=1, horizontal=True, key="s_depth_radio", label_visibility="collapsed")
         max_db_res = {"بحث سريع (10)": 10, "بحث متوسط (25)": 25, "بحث شامل (50)": 50}[s_depth]
-        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb")
+        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb") # Default to True
 
     if q_info_data['status'] and q_info_data['details']:
         with st.expander("ℹ️ معلومات قاعدة البيانات", expanded=False):
@@ -311,12 +315,19 @@ def main():
                 
                 full_debug_info_parts = []
                 if "debug_info" in msg_item: full_debug_info_parts.append(msg_item["debug_info"])
-                if "initial_search_details" in msg_item and msg_item["initial_search_details"]:
-                    details_str = "\n".join([f"  - ID: {str(d['id'])[:8]}... | Score: {d['score']:.3f} | Source: {d['source']} | Preview: {d['text_preview']}" for d in msg_item["initial_search_details"]])
+                
+                # Displaying initial Qdrant search details if available and debug is on
+                if show_dbg and "initial_search_details" in msg_item and msg_item["initial_search_details"]:
+                    details_str_parts = []
+                    for d_idx, d in enumerate(msg_item["initial_search_details"]):
+                        # Ensure id is a string before slicing
+                        display_id = str(d.get('id', 'N/A')) 
+                        details_str_parts.append(f"  {d_idx+1}. ID: {display_id[:8]}... | Score: {d.get('score', 0):.3f} | Source: {d.get('source', 'N/A')} | Preview: {d.get('text_preview', 'N/A')}")
+                    details_str = "\n".join(details_str_parts)
                     full_debug_info_parts.append(f"نتائج Qdrant الأولية ({len(msg_item['initial_search_details'])}):\n{details_str}")
                 
-                if show_dbg and full_debug_info_parts:
-                    st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية:<div class="debug-info-results">{" | ".join(full_debug_info_parts)}</div></div>', unsafe_allow_html=True)
+                if show_dbg and full_debug_info_parts: # Check again if there's anything to show
+                    st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية:<div class="debug-info-results">{"<hr>".join(full_debug_info_parts)}</div></div>', unsafe_allow_html=True)
 
                 if "sources" in msg_item and msg_item["sources"]:
                     st.markdown("<div style='text-align: right; margin-top:0.5rem;'><strong>المصادر المستخدمة:</strong></div><div class='source-container'>", unsafe_allow_html=True)
@@ -341,9 +352,8 @@ def main():
         bot_msg_data = {"api_used": sel_llm}
         
         with st.spinner(f"جاري البحث ({max_db_res} نتيجة)..."):
-            # comprehensive_search now returns initial_search_details as the third item
             search_res, db_dbg_info, initial_details = comprehensive_search(user_q.strip(), max_results=max_db_res)
-            bot_msg_data["initial_search_details"] = initial_details # Store for debug display
+            bot_msg_data["initial_search_details"] = initial_details 
 
         if search_res:
             ctx_texts, srcs_for_llm = [], []
@@ -377,26 +387,29 @@ def main():
             
             bot_msg_data["content"] = bot_response
             bot_msg_data["sources"] = srcs_for_llm
-            bot_msg_data["debug_info"] = f"{db_dbg_info} | {llm_ctx_info}"
+            bot_msg_data["debug_info"] = f"{db_dbg_info} | {llm_ctx_info}" if db_dbg_info else llm_ctx_info
         else:
             bot_msg_data["content"] = "لم أجد أي معلومات متعلقة بسؤالك في قاعدة بيانات كتب واستفتاءات الشيخ محمد السند حالياً. يرجى محاولة صياغة السؤال بشكل مختلف أو استخدام كلمات مفتاحية أخرى."
-            bot_msg_data["debug_info"] = db_dbg_info
+            bot_msg_data["debug_info"] = db_dbg_info if db_dbg_info else "No results from Qdrant."
         
         bot_msg_data["role"] = "assistant"
         bot_msg_data["time_taken"] = time.perf_counter() - s_time
         st.session_state.messages.append(bot_msg_data)
         st.rerun()
     elif send_btn and not user_q.strip(): 
-        st.toast("يرجى إدخال سؤال.", icon="�")
+        st.toast("يرجى إدخال سؤال.", icon="📝")
 
     with input_main:
         if st.button("🗑️ مسح المحادثة", use_container_width=True, key="clear_btn", type="secondary"):
             st.session_state.messages = []; st.toast("تم مسح المحادثة.", icon="🗑️"); time.sleep(0.5); st.rerun()
 
+# This is the expected end of the script.
+# Ensure no extra characters or lines are present after this block.
 if __name__ == "__main__":
     if not all([QDRANT_API_KEY, QDRANT_URL]):
         st.error("معلومات QDRANT مفقودة. تحقق من الإعدادات.")
-    if not any([OPENAI_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY]): # Check if at least one LLM key exists
+    if not any([OPENAI_API_KEY and OPENAI_API_KEY != "YOUR_OPENAI_API_KEY_PLACEHOLDER", 
+                DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER", 
+                GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER"]): # Check if at least one LLM key exists and is not a placeholder
         st.info("بعض مفاتيح LLM API مفقودة أو هي قيم افتراضية.", icon="ℹ️")
     main()
-�
