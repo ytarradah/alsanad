@@ -15,7 +15,7 @@ import google.generativeai as genai
 # Actual Qdrant URL and API Key from your initial script
 QDRANT_URL = "https://993e7bbb-cbe2-4b82-b672-90c4aed8585e.europe-west3-0.gcp.cloud.qdrant.io:6333"
 QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.qRNtWMTIR32MSM6KUe3lE5qJ0fS5KgyAf86EKQgQ1FQ"
-COLLECTION_NAME = "arabic_documents_384" # Or your specific collection name
+COLLECTION_NAME = "arabic_documents_enhanced" # Or your specific collection name
 
 # --- API Key Management ---
 # WARNING: Storing API keys directly in code is a security risk.
