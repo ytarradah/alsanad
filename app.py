@@ -211,7 +211,7 @@ def init_qdrant_client_resource():
 
 @st.cache_resource 
 def init_embedding_model_resource():
-    try: return SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+    try: return SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
     except Exception as e: st.error(f"فشل تحميل نموذج التضمين: {e}"); return None
 
 # ----------------------
