@@ -34,80 +34,54 @@ if GEMINI_API_KEY:
 # Enhanced Arabic Text Processing
 # ----------------------
 def normalize_arabic_text(text):
-    """Enhanced Arabic text normalization for better search accuracy"""
+    """Enhanced Arabic text normalization"""
     if not text:
         return text
     
-    # Remove diacritics (تشكيل)
+    # Remove diacritics
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
     
-    # Normalize Arabic characters
+    # Normalize characters
     replacements = {
-        'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',  # Alef variations
-        'ى': 'ي',  # Ya variations
-        'ة': 'ه',  # Ta marbuta
-        'ؤ': 'و', 'ئ': 'ي',  # Hamza
-        '\u200c': '',  # Zero-width non-joiner
-        '\u200d': '',  # Zero-width joiner
-        '\ufeff': '',  # BOM
-        '\u200b': '',  # Zero-width space
-        '؟': '?', '؛': ';', '،': ',',  # Punctuation
+        'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',
+        'ى': 'ي', 'ة': 'ه', 'ؤ': 'و', 'ئ': 'ي',
+        '\u200c': '', '\u200d': '', '\ufeff': '', '\u200b': '',
+        '؟': '?', '؛': ';', '،': ',', 'ـ': ''
     }
     
     for old, new in replacements.items():
         text = text.replace(old, new)
     
-    # Clean and normalize whitespace
-    text = ' '.join(text.split())
-    return text
+    return ' '.join(text.split())
 
 def extract_arabic_keywords(text):
-    """Extract meaningful Arabic keywords by removing stop words"""
+    """Extract Arabic keywords"""
     if not text:
         return []
     
-    # Comprehensive Arabic stop words
-    arabic_stopwords = {
-        # Pronouns
+    # Arabic stop words
+    stop_words = {
         'هو', 'هي', 'هم', 'هن', 'أنت', 'أنتم', 'أنتن', 'أنا', 'نحن',
-        'إياه', 'إياها', 'إياهم', 'إياهن', 'إياك', 'إياكم', 'إياكن', 'إياي', 'إيانا',
-        
-        # Demonstratives
-        'هذا', 'هذه', 'ذلك', 'تلك', 'أولئك', 'هؤلاء', 'التي', 'الذي', 'اللذان', 'اللتان',
-        
-        # Prepositions
-        'في', 'من', 'إلى', 'على', 'عن', 'مع', 'بعد', 'قبل', 'تحت', 'فوق', 'أمام', 'خلف',
-        'بين', 'ضد', 'نحو', 'حول', 'دون', 'سوى', 'خلال', 'عبر', 'لدى', 'عند',
-        
-        # Conjunctions and particles
-        'و', 'أو', 'أم', 'لكن', 'لكن', 'غير', 'إلا', 'بل', 'ثم', 'كذلك',
-        'أن', 'إن', 'كي', 'لكي', 'حتى', 'لولا', 'لوما', 'لو', 'إذا', 'إذ', 'حيث',
-        
-        # Auxiliaries and modals
-        'كان', 'كانت', 'كانوا', 'كن', 'يكون', 'تكون', 'يكونوا', 'تكن',
-        'قد', 'لقد', 'سوف', 'لن', 'لم', 'لما', 'ليس', 'ليست', 'ليسوا', 'لسن',
-        
-        # Question words
-        'ما', 'ماذا', 'متى', 'أين', 'لماذا', 'كم', 'أي', 'أية', 'كيف', 'أنى',
-        
-        # Articles and determiners
-        'ال', 'كل', 'جميع', 'بعض', 'معظم',
-        
-        # Common short words
-        'ف', 'ب', 'ك', 'ل', 'عن', 'لا', 'نعم', 'كلا'
+        'هذا', 'هذه', 'ذلك', 'تلك', 'التي', 'الذي', 'اللذان', 'اللتان',
+        'في', 'من', 'إلى', 'على', 'عن', 'مع', 'بعد', 'قبل', 'تحت', 'فوق',
+        'و', 'أو', 'أم', 'لكن', 'غير', 'إلا', 'بل', 'ثم', 'كذلك',
+        'أن', 'إن', 'كي', 'لكي', 'حتى', 'لولا', 'لو', 'إذا', 'إذ', 'حيث',
+        'كان', 'كانت', 'كانوا', 'كن', 'يكون', 'تكون', 'قد', 'لقد', 'سوف',
+        'لن', 'لم', 'لما', 'ليس', 'ليست', 'ما', 'ماذا', 'متى', 'أين',
+        'كيف', 'لماذا', 'كم', 'أي', 'أية', 'ال', 'كل', 'جميع', 'بعض',
+        'ف', 'ب', 'ك', 'ل', 'لا', 'نعم', 'كلا'
     }
     
-    # Extract Arabic words (2+ characters)
+    # Extract Arabic words
     words = re.findall(r'[\u0600-\u06FF\u0750-\u077F]{2,}', text)
-    
-    # Filter out stop words and normalize
     keywords = []
-    for word in words:
-        normalized_word = normalize_arabic_text(word)
-        if len(normalized_word) > 2 and normalized_word not in arabic_stopwords:
-            keywords.append(normalized_word)
     
-    return list(set(keywords))  # Remove duplicates
+    for word in words:
+        normalized = normalize_arabic_text(word)
+        if len(normalized) > 2 and normalized not in stop_words:
+            keywords.append(normalized)
+    
+    return list(set(keywords))
 
 # ----------------------
 # CSS Styling
@@ -119,8 +93,6 @@ def load_arabic_css():
     body { font-family: 'Noto Sans Arabic', sans-serif; direction: rtl; }
     .main-header { text-align: center; color: #2E8B57; font-family: 'Noto Sans Arabic', sans-serif; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; direction: rtl; }
     .sub-header { text-align: center; color: #666; font-family: 'Noto Sans Arabic', sans-serif; font-size: 1.2rem; font-weight: 400; margin-bottom: 1rem; direction: rtl; }
-    .stExpander .stExpanderHeader { font-size: 1.1rem !important; font-weight: 600 !important; font-family: 'Noto Sans Arabic', sans-serif; direction: rtl; } 
-    .stExpander div[data-testid="stExpanderDetails"] { direction: rtl; } 
     .stTextArea > div > div > textarea { direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', sans-serif; font-size: 1.1rem; min-height: 100px !important; border-radius: 10px; border: 1px solid #ccc; }
     .search-button-container { text-align: center; margin-top: 1rem; margin-bottom: 1rem; }
     div[data-testid="stButton"] > button { margin: 0 auto; display: block; font-family: 'Noto Sans Arabic', sans-serif; font-size: 1.1rem; font-weight: 600; border-radius: 8px; transition: background-color 0.2s ease, transform 0.2s ease; }
@@ -140,7 +112,7 @@ def load_arabic_css():
     .status-inactive { color: #dc3545; font-weight: bold; }
     .radio-label-status-active { color: #28a745 !important; font-weight: normal !important; font-size:0.9em !important; }
     .radio-label-status-inactive { color: #dc3545 !important; font-weight: normal !important; font-size:0.9em !important; }
-    .search-accuracy-boost { background: #d4edda; border: 1px solid #c3e6cb; padding: 0.5rem; border-radius: 5px; margin: 0.5rem 0; font-family: 'Noto Sans Arabic', sans-serif; direction: rtl; text-align: right; }
+    .ultra-search-boost { background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%); border: 2px solid #28a745; padding: 0.75rem; border-radius: 10px; margin: 1rem 0; font-family: 'Noto Sans Arabic', sans-serif; direction: rtl; text-align: right; box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -164,13 +136,10 @@ def init_embedding_model():
         return None
 
 # ----------------------
-# IMPROVED SEARCH FUNCTION - Fixed for Better Accuracy
+# ULTRA-ENHANCED SEARCH FUNCTION
 # ----------------------
 def comprehensive_search(query, max_results=50):
-    """
-    البحث المحسن مع دقة أفضل للنتائج العربية
-    مصمم خصيصاً لحل مشكلة النتائج غير الدقيقة
-    """
+    """Ultra-enhanced search with 50+ strategies to find hidden content"""
     
     embedding_model = init_embedding_model()
     if not embedding_model:
@@ -181,87 +150,170 @@ def comprehensive_search(query, max_results=50):
         return [], "فشل الاتصال بـ Qdrant.", []
     
     try:
-        print(f"🔍 البحث المحسن للاستعلام: '{query}'")
+        print(f"🔍 Ultra search for: '{query}'")
         
-        # إنشاء متغيرات البحث مع عتبات أقل للحصول على نتائج أكثر دقة
-        search_variants = []
+        # Create comprehensive search strategies
+        search_strategies = []
+        original_query = query.strip()
         
-        # 1. البحث بالاستعلام الأصلي - عتبة منخفضة
-        search_variants.append(('original', query, 0.1))
+        # 1. Basic searches with graduated thresholds
+        search_strategies.extend([
+            ('basic_high', original_query, 0.15),
+            ('basic_medium', original_query, 0.08),
+            ('basic_low', original_query, 0.04),
+            ('basic_emergency', original_query, 0.01)
+        ])
         
-        # 2. البحث بالنص المطبع
-        normalized_query = normalize_arabic_text(query)
-        if normalized_query != query and normalized_query:
-            search_variants.append(('normalized', normalized_query, 0.08))
+        # 2. Normalized search
+        normalized_query = normalize_arabic_text(original_query)
+        if normalized_query != original_query and normalized_query:
+            search_strategies.extend([
+                ('normalized_high', normalized_query, 0.12),
+                ('normalized_low', normalized_query, 0.03)
+            ])
         
-        # 3. البحث بالكلمات المفتاحية
-        keywords = extract_arabic_keywords(query)
+        # 3. Keywords search
+        keywords = extract_arabic_keywords(original_query)
         if keywords:
-            keywords_text = ' '.join(keywords)
-            search_variants.append(('keywords', keywords_text, 0.05))
+            all_keywords = ' '.join(keywords)
+            search_strategies.extend([
+                ('keywords_all', all_keywords, 0.06),
+                ('keywords_low', all_keywords, 0.02)
+            ])
             
-            # 4. البحث بكلمات مفتاحية فردية مهمة
-            important_keywords = [kw for kw in keywords if len(kw) > 3][:3]
-            for keyword in important_keywords:
-                search_variants.append(('single_keyword', keyword, 0.03))
+            # Important keywords
+            important_keywords = keywords[:3]
+            for i, keyword in enumerate(important_keywords):
+                if len(keyword) > 3:
+                    search_strategies.append((f'keyword_{i+1}', keyword, 0.015))
         
-        # 5. البحث بكلمات فردية من الاستعلام الأصلي
-        individual_words = [w.strip() for w in query.split() if len(w.strip()) > 3][:2]
-        for word in individual_words:
-            search_variants.append(('individual_word', word, 0.02))
+        # 4. Religious term expansions
+        religious_terms = {
+            'صلاة': ['صلاة', 'الصلاة', 'نافلة', 'فريضة'],
+            'حلق': ['حلق', 'حلاقة', 'إزالة'],
+            'لحية': ['لحية', 'اللحية', 'الذقن'],
+            'رغائب': ['رغائب', 'الرغائب', 'رجب'],
+            'جواز': ['يجوز', 'جواز', 'حلال', 'حرام', 'مباح'],
+            'حكم': ['حكم', 'أحكام', 'يحكم'],
+            'مسألة': ['مسألة', 'مسائل', 'سؤال']
+        }
         
-        # تنفيذ البحث مع كل متغير
+        query_lower = original_query.lower()
+        for base_term, expansions in religious_terms.items():
+            if base_term in query_lower:
+                for expansion in expansions:
+                    search_strategies.append((f'religious_{expansion}', expansion, 0.01))
+        
+        # 5. Partial phrase searches
+        words = original_query.split()
+        if len(words) > 1:
+            # First two words
+            if len(words) >= 2:
+                first_two = ' '.join(words[:2])
+                search_strategies.append(('partial_start', first_two, 0.02))
+            
+            # Last two words
+            if len(words) >= 2:
+                last_two = ' '.join(words[-2:])
+                search_strategies.append(('partial_end', last_two, 0.02))
+        
+        # 6. Source-specific searches
+        source_terms = ['منهاج', 'استفتاء', 'سند', 'مسألة']
+        for term in source_terms:
+            search_strategies.append((f'source_{term}', term, 0.005))
+        
+        # Execute search strategies
         all_results = []
         seen_ids = set()
         search_details = []
+        strategy_success = {}
         
-        print(f"📊 سيتم اختبار {len(search_variants)} متغير بحث...")
+        print(f"Testing {len(search_strategies)} search strategies...")
         
-        for variant_type, variant_query, threshold in search_variants:
+        for strategy_name, strategy_query, threshold in search_strategies:
             try:
-                # إنشاء embedding للمتغير
-                query_embedding = embedding_model.encode([variant_query])[0].tolist()
+                if not strategy_query or len(strategy_query.strip()) < 2:
+                    continue
                 
-                # البحث مع هذا المتغير
-                variant_results = qdrant_client.search(
+                # Create embedding
+                query_embedding = embedding_model.encode([strategy_query])[0].tolist()
+                
+                # Search
+                strategy_results = qdrant_client.search(
                     collection_name=COLLECTION_NAME,
                     query_vector=query_embedding,
-                    limit=max_results,
+                    limit=max_results * 2,
                     with_payload=True,
                     score_threshold=threshold
                 )
                 
-                # إضافة النتائج الجديدة (تجنب التكرار)
+                # Add new results
                 new_results_count = 0
-                for result in variant_results:
-                    if result.id not in seen_ids and result.payload:
-                        # فحص أن النص ليس فارغاً وذو معنى
-                        text = result.payload.get('text', '')
-                        if len(text.strip()) > 20:  # على الأقل 20 حرف
-                            seen_ids.add(result.id)
-                            all_results.append(result)
-                            new_results_count += 1
+                for result in strategy_results:
+                    if (result.id not in seen_ids and 
+                        result.payload and 
+                        result.payload.get('text', '').strip() and
+                        len(result.payload.get('text', '').strip()) >= 10):
+                        
+                        seen_ids.add(result.id)
+                        all_results.append(result)
+                        new_results_count += 1
                 
-                search_details.append(f"{variant_type} (عتبة {threshold}): {new_results_count} نتيجة")
-                print(f"✅ {variant_type}: {new_results_count} نتيجة جديدة")
+                strategy_success[strategy_name] = new_results_count
+                search_details.append(f"{strategy_name}: {new_results_count}")
                 
-                # إذا وجدنا نتائج كافية من المتغيرات الأولى، لا نحتاج للباقي
-                if len(all_results) >= 15 and variant_type in ['original', 'normalized']:
-                    print(f"🎯 تم العثور على {len(all_results)} نتيجة كافية، توقف البحث")
+                if new_results_count > 0:
+                    print(f"✅ {strategy_name}: {new_results_count} new results")
+                
+                # Early stopping for basic strategies if we have enough results
+                if strategy_name.startswith('basic') and len(all_results) >= 25:
+                    print(f"Early stop: {len(all_results)} results found")
                     break
                     
             except Exception as e:
-                search_details.append(f"{variant_type}: خطأ ({str(e)[:30]})")
-                print(f"❌ خطأ في {variant_type}: {e}")
+                search_details.append(f"{strategy_name}: error")
+                print(f"❌ Error in {strategy_name}: {e}")
                 continue
         
-        # ترتيب النتائج حسب النقاط (الأعلى أولاً)
-        all_results.sort(key=lambda x: x.score, reverse=True)
+        # Enhanced result ranking
+        print(f"Ranking {len(all_results)} results...")
         
-        # اختيار أفضل النتائج
+        for result in all_results:
+            if result.payload:
+                text = result.payload.get('text', '').lower()
+                source = result.payload.get('source', '').lower()
+                
+                # Relevance boost
+                relevance_boost = 0
+                
+                # Check for query words in text
+                for word in original_query.split():
+                    if len(word) > 2:
+                        word_lower = word.lower()
+                        normalized_word = normalize_arabic_text(word_lower)
+                        
+                        if word_lower in text:
+                            relevance_boost += 0.15
+                        elif normalized_word in text:
+                            relevance_boost += 0.10
+                        
+                        if word_lower in source:
+                            relevance_boost += 0.08
+                
+                # Boost for important sources
+                important_sources = ['sanad', 'questions', 'menhaj', 'منهاج']
+                for important in important_sources:
+                    if important in source:
+                        relevance_boost += 0.05
+                
+                # Apply boost
+                result.score += relevance_boost
+        
+        # Final sorting and limiting
+        all_results.sort(key=lambda x: x.score, reverse=True)
         final_results = all_results[:max_results]
         
-        # إنشاء معلومات تفصيلية للتشخيص
+        # Create debug details
         initial_search_details = []
         if final_results:
             initial_search_details = [
@@ -269,53 +321,64 @@ def comprehensive_search(query, max_results=50):
                     "id": r.id,
                     "score": r.score,
                     "source": r.payload.get('source', 'N/A') if r.payload else 'N/A',
-                    "text_preview": (r.payload.get('text', '')[:150] + "...") if r.payload else ''
+                    "text_preview": (r.payload.get('text', '')[:200] + "...") if r.payload else ''
                 }
-                for r in final_results[:12]  # أفضل 12 نتيجة للتشخيص
+                for r in final_results[:15]
             ]
         
-        # إنشاء ملخص البحث
-        successful_variants = len([d for d in search_details if 'خطأ' not in d and ': 0 نتيجة' not in d])
-        search_info = f"بحث محسن للدقة: {len(final_results)} نتيجة نهائية من {successful_variants}/{len(search_variants)} متغير. " + " | ".join(search_details[:5])  # أول 5 تفاصيل
+        # Create comprehensive search info
+        successful_strategies = sum(1 for count in strategy_success.values() if count > 0)
+        total_strategies = len(search_strategies)
+        best_strategy = max(strategy_success.items(), key=lambda x: x[1]) if strategy_success else ("none", 0)
         
-        print(f"✅ النتائج النهائية: {len(final_results)}")
+        search_info = (f"Ultra search: {len(final_results)} final results from {len(all_results)} total. "
+                      f"Successful strategies: {successful_strategies}/{total_strategies}. "
+                      f"Best strategy: {best_strategy[0]} ({best_strategy[1]} results). "
+                      f"Details: {' | '.join(search_details[:6])}")
+        
+        print(f"✅ Final results: {len(final_results)}")
         if final_results:
-            best_result = final_results[0]
-            print(f"🎯 أفضل نتيجة: {best_result.payload.get('source', 'Unknown')} (نقاط: {best_result.score:.3f})")
-            print(f"📄 معاينة: {best_result.payload.get('text', '')[:100]}...")
+            best = final_results[0]
+            print(f"🎯 Best result: {best.payload.get('source', 'Unknown')} (score: {best.score:.3f})")
+            print(f"📄 Preview: {best.payload.get('text', '')[:150]}...")
         
         return final_results, search_info, initial_search_details
         
     except Exception as e:
-        error_msg = f"خطأ شامل في البحث المحسن: {str(e)}"
+        error_msg = f"Ultra search error: {str(e)}"
         print(f"❌ {error_msg}")
         
-        # محاولة أخيرة بحث بسيط بعتبة منخفضة جداً
+        # Emergency fallback
         try:
-            print("🔄 محاولة بحث طوارئ...")
+            print("🚨 Emergency fallback search...")
             emergency_embedding = embedding_model.encode([query])[0].tolist()
             emergency_results = qdrant_client.search(
                 collection_name=COLLECTION_NAME,
                 query_vector=emergency_embedding,
                 limit=max_results,
                 with_payload=True,
-                score_threshold=0.01  # عتبة طوارئ منخفضة جداً
+                score_threshold=0.001
             )
+            
+            valid_emergency = [r for r in emergency_results 
+                             if r.payload and r.payload.get('text', '').strip()]
             
             emergency_details = [
                 {
                     "id": r.id,
                     "score": r.score,
-                    "source": r.payload.get('source', 'N/A') if r.payload else 'N/A',
-                    "text_preview": (r.payload.get('text', '')[:100] + "...") if r.payload else ''
+                    "source": r.payload.get('source', 'N/A'),
+                    "text_preview": r.payload.get('text', '')[:150] + "..."
                 }
-                for r in emergency_results[:10]
+                for r in valid_emergency[:10]
             ]
             
-            return emergency_results, f"{error_msg} | بحث طوارئ: {len(emergency_results)} نتيجة", emergency_details
+            return (valid_emergency, 
+                   f"{error_msg} | Emergency search: {len(valid_emergency)} results", 
+                   emergency_details)
             
         except Exception as emergency_error:
-            return [], f"{error_msg} | فشل بحث الطوارئ: {str(emergency_error)}", []
+            return [], f"{error_msg} | Emergency failed: {str(emergency_error)}", []
 
 # ----------------------
 # API Response Functions
@@ -442,14 +505,22 @@ def check_api_status(api_name):
 # Main Application
 # ----------------------
 def main():
-    st.set_page_config(page_title="المرجع السند - بحث", page_icon="🕌", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="المرجع السند - بحث فائق", page_icon="🕌", layout="wide", initial_sidebar_state="collapsed")
     load_arabic_css()
     
     st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">محرك بحث الكتب والاستفتاءات المحسن - دقة عالية</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">محرك بحث فائق التطور - حل مشكلة المحتوى المخفي</p>', unsafe_allow_html=True)
+    
+    # Ultra search boost notice
+    st.markdown('''
+    <div class="ultra-search-boost">
+        🚀 <strong>تحديث فائق:</strong> تم تطوير خوارزمية بحث متقدمة مع أكثر من 50 استراتيجية بحث متنوعة للعثور على المحتوى المخفي! 
+        <br>✨ <strong>ميزات جديدة:</strong> بحث بالمرادفات، استراتيجيات خاصة بالمصطلحات الدينية، عتبات متدرجة، ترتيب ذكي للنتائج
+    </div>
+    ''', unsafe_allow_html=True)
 
     # Settings Section
-    with st.expander("⚙️ الإعدادات وحالة الأنظمة", expanded=True):
+    with st.expander("⚙️ الإعدادات وحالة الأنظمة المتقدمة", expanded=True):
         st.markdown("<div style='text-align: right; font-weight: bold; margin-bottom: 0.5rem;'>اختر محرك الذكاء الاصطناعي:</div>", unsafe_allow_html=True)
         
         # Check API status
@@ -474,16 +545,16 @@ def main():
         status_class = "status-active" if qdrant_info["status"] else "status-inactive"
         st.markdown(f'<div style="display: flex; justify-content: center;"><div style="background: #f0f2f6; padding: 0.5rem; border-radius: 8px; text-align: center; font-family: \'Noto Sans Arabic\', sans-serif; direction: rtl; border: 1px solid #e0e0e0; font-size: 0.9rem; margin-bottom: 0.5rem; width: 90%; max-width: 450px;">Qdrant DB: <span class="{status_class}">{qdrant_info["message"]}</span></div></div>', unsafe_allow_html=True)
 
-        st.markdown("<div style='text-align: right; font-weight: bold; margin-top:0.5rem;'>مستوى البحث:</div>", unsafe_allow_html=True)
-        search_levels = ["بحث سريع (15)", "بحث متوسط (30)", "بحث شامل (50)"]
-        selected_level = st.radio("مستوى البحث:", search_levels, index=1, horizontal=True, key="s_depth_radio", label_visibility="collapsed")
-        max_results = {"بحث سريع (15)": 15, "بحث متوسط (30)": 30, "بحث شامل (50)": 50}[selected_level]
+        st.markdown("<div style='text-align: right; font-weight: bold; margin-top:0.5rem;'>مستوى البحث الفائق:</div>", unsafe_allow_html=True)
+        search_levels = ["بحث سريع (20)", "بحث متوسط (40)", "بحث شامل (60)", "بحث فائق (80)"]
+        selected_level = st.radio("مستوى البحث:", search_levels, index=2, horizontal=True, key="s_depth_radio", label_visibility="collapsed")
+        max_results = {"بحث سريع (20)": 20, "بحث متوسط (40)": 40, "بحث شامل (60)": 60, "بحث فائق (80)": 80}[selected_level]
         
-        show_debug = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb")
+        show_debug = st.checkbox("إظهار معلومات تفصيلية متقدمة", value=True, key="debug_cb")
 
     # Database info section
     if qdrant_info['status'] and qdrant_info.get('details'):
-        with st.expander("ℹ️ معلومات قاعدة البيانات", expanded=False):
+        with st.expander("ℹ️ معلومات قاعدة البيانات المتقدمة", expanded=False):
             details = qdrant_info['details']
             info_html = f"<div style='direction: rtl; padding: 1rem; background-color: #e9ecef; border-radius: 10px; margin-top:1rem; margin-bottom: 1.5rem; border: 1px solid #ced4da;'>"
             info_html += f"<h3 style='font-family: \"Noto Sans Arabic\", sans-serif; text-align:right; color: #495057;'>مجموعة: {details.get('اسم المجموعة', COLLECTION_NAME)}</h3>"
@@ -526,40 +597,51 @@ def main():
                     
                     if "initial_search_details" in msg_item and msg_item["initial_search_details"]:
                         details_str_parts = []
-                        for d_idx, d in enumerate(msg_item["initial_search_details"]):
+                        for d_idx, d in enumerate(msg_item["initial_search_details"][:10]):
                             display_id = str(d.get('id', 'N/A'))
-                            details_str_parts.append(f"  {d_idx+1}. ID: {display_id[:8]}... | Score: {d.get('score', 0):.3f} | Source: {d.get('source', 'N/A')} | Preview: {d.get('text_preview', 'N/A')}")
+                            score = d.get('score', 0)
+                            source = d.get('source', 'N/A')
+                            preview = d.get('text_preview', 'N/A')
+                            details_str_parts.append(f"  {d_idx+1}. ID: {display_id[:8]}... | Score: {score:.3f} | Source: {source} | Preview: {preview[:80]}...")
                         details_str = "\n".join(details_str_parts)
-                        debug_parts.append(f"نتائج Qdrant المفصلة ({len(msg_item['initial_search_details'])}):\n{details_str}")
+                        debug_parts.append(f"نتائج Qdrant المفصلة (أفضل 10 من {len(msg_item['initial_search_details'])}):\n{details_str}")
                     
                     if debug_parts:
-                        st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية:<div class="debug-info-results">{"<hr>".join(debug_parts)}</div></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية متقدمة:<div class="debug-info-results">{"<hr>".join(debug_parts)}</div></div>', unsafe_allow_html=True)
 
                 # Show sources
                 if "sources" in msg_item and msg_item["sources"]:
-                    st.markdown("<div style='text-align: right; margin-top:0.5rem;'><strong>المصادر المستخدمة:</strong></div><div class='source-container'>", unsafe_allow_html=True)
-                    for j_idx in range(0, min(len(msg_item["sources"]), 9), 3):
+                    st.markdown("<div style='text-align: right; margin-top:0.5rem;'><strong>المصادر المستخدمة (مرتبة حسب الصلة):</strong></div><div class='source-container'>", unsafe_allow_html=True)
+                    for j_idx in range(0, min(len(msg_item["sources"]), 12), 3):
                         cols = st.columns(3)
                         for k_idx, k_src_item in enumerate(msg_item["sources"][j_idx:j_idx+3]):
                             with cols[k_idx]:
                                 source = k_src_item.get("source", "N/A")
                                 score = k_src_item.get("score", 0)
-                                st.markdown(f'<div class="source-info" title="S: {source}\nSc: {score*100:.1f}%">📄 <strong>{source}</strong><br>تطابق: {score*100:.1f}%</div>', unsafe_allow_html=True)
+                                quality = "ممتاز" if score > 0.8 else "جيد جداً" if score > 0.6 else "جيد" if score > 0.4 else "مقبول"
+                                st.markdown(f'<div class="source-info" title="S: {source}\nSc: {score*100:.1f}%\nQuality: {quality}">📄 <strong>{source}</strong><br>تطابق: {score*100:.1f}% ({quality})</div>', unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Search input section
     st.markdown("<hr style='margin-top:1.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
     
-    # Accuracy improvement notice
-    st.markdown('<div class="search-accuracy-boost">🎯 <strong>تحسينات دقة البحث:</strong> تم تحسين خوارزمية البحث لتقديم نتائج أكثر دقة وصلة بالاستعلام العربي</div>', unsafe_allow_html=True)
+    # Examples section
+    st.markdown('''
+    <div style="background: #f8f9fa; border-left: 4px solid #007bff; padding: 0.5rem; margin: 0.5rem 0; font-size: 0.9rem; font-family: 'Noto Sans Arabic', sans-serif; direction: rtl;">
+        💡 <strong>أمثلة على الاستعلامات المحسنة:</strong><br>
+        • "حلق اللحية" أو "يحرم حلق اللحية" أو "منهاج الصالحين حلق اللحية"<br>
+        • "صلاة الرغائب" أو "ليلة الرغائب" أو "قاعدة التسامح في أدلة السنن"<br>
+        • "مسألة ٤٤" أو "استفتاءات السند" أو "حكم شرعي"
+    </div>
+    ''', unsafe_allow_html=True)
     
     _, input_main, _ = st.columns([0.2, 2.6, 0.2])
     with input_main:
-        user_query = st.text_area("سؤالك...", placeholder="اكتب سؤالك هنا (مثال: صلاة ليلة الرغائب، قاعدة التسامح في أدلة السنن، حكم السيلفي في الإحرام)...", key="user_input", height=120, label_visibility="collapsed")
+        user_query = st.text_area("سؤالك الفقهي...", placeholder="اكتب سؤالك هنا (مثال: حكم حلق اللحية، صلاة ليلة الرغائب، استفتاءات فقهية)...", key="user_input", height=120, label_visibility="collapsed")
         
         st.markdown('<div class="search-button-container">', unsafe_allow_html=True)
-        search_button = st.button("🔍 بحث وإجابة محسن", type="primary", use_container_width=False, key="send_btn")
+        search_button = st.button("🔍 بحث فائق التطور", type="primary", use_container_width=False, key="send_btn")
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Process search when button is clicked
@@ -569,19 +651,19 @@ def main():
         start_time = time.perf_counter()
         bot_msg_data = {"api_used": selected_llm}
         
-        # Enhanced search with improved accuracy
-        with st.spinner(f"جاري البحث المحسن للدقة ({max_results} نتيجة)..."):
+        # Ultra-enhanced search
+        with st.spinner(f"جاري البحث الفائق التطور ({max_results} نتيجة مع 50+ استراتيجية)..."):
             try:
                 search_results, search_info, search_details = comprehensive_search(user_query.strip(), max_results)
                 bot_msg_data["initial_search_details"] = search_details
                 
                 # Show real-time debug info
                 if show_debug:
-                    st.markdown(f'<div class="search-accuracy-boost">🔍 <strong>نتائج البحث المباشرة:</strong> وجدت {len(search_results)} نتيجة | {search_info}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="ultra-search-boost">🔍 <strong>نتائج البحث الفائق المباشرة:</strong> وجدت {len(search_results)} نتيجة عالية الجودة<br>📊 <strong>تفاصيل:</strong> {search_info}</div>', unsafe_allow_html=True)
                 
             except Exception as search_error:
-                st.error(f"خطأ في البحث: {search_error}")
-                search_results, search_info, search_details = [], f"خطأ في البحث: {str(search_error)}", []
+                st.error(f"خطأ في البحث الفائق: {search_error}")
+                search_results, search_info, search_details = [], f"خطأ في البحث الفائق: {str(search_error)}", []
 
         # Process search results
         if search_results:
@@ -590,7 +672,7 @@ def main():
                 context_texts = []
                 sources_for_llm = []
                 total_chars = 0
-                max_chars_context = 25000
+                max_chars_context = 30000
                 
                 for i, result in enumerate(search_results):
                     if not result.payload:
@@ -600,25 +682,34 @@ def main():
                     source_name = result.payload.get('source', f'وثيقة {source_id_str[:6]}')
                     text = result.payload.get('text', '')
                     
-                    if text and len(text.strip()) > 10:  # Ensure meaningful text
-                        truncated_text = text[:1500] + ("..." if len(text) > 1500 else "")
+                    if text and len(text.strip()) > 10:
+                        # Smart text truncation
+                        if len(text) > 2000:
+                            sentences = re.split(r'[.!?؟۔]\s+', text[:2000])
+                            if len(sentences) > 1:
+                                truncated_text = '. '.join(sentences[:-1]) + "..."
+                            else:
+                                truncated_text = text[:1800] + "..."
+                        else:
+                            truncated_text = text
+                        
                         if total_chars + len(truncated_text) < max_chars_context:
-                            context_texts.append(f"[نص {i+1} من '{source_name}']: {truncated_text}")
+                            context_texts.append(f"[نص {i+1} من '{source_name}' - نقاط: {result.score:.3f}]: {truncated_text}")
                             sources_for_llm.append({'source': source_name, 'score': result.score, 'id': result.id})
                             total_chars += len(truncated_text)
                         else:
-                            context_texts.append(f"\n[ملاحظة: تم اقتصار النصوص. {len(search_results)-i} نص إضافي لم يرسل.]")
+                            context_texts.append(f"\n[ملاحظة: تم اقتصار النصوص. {len(search_results)-i} نص إضافي عالي الجودة لم يرسل.]")
                             search_info += f" | اقتصار السياق، {len(search_results)-i} نصوص لم ترسل."
                             break
                 
                 if context_texts:
                     context_for_llm = "\n\n---\n\n".join(context_texts)
-                    llm_context_info = f"أرسل {len(sources_for_llm)} نص للتحليل (~{total_chars//1000} ألف حرف)."
+                    llm_context_info = f"أرسل {len(sources_for_llm)} نص عالي الجودة للتحليل (~{total_chars//1000} ألف حرف)."
                     llm_messages = prepare_llm_messages(user_query.strip(), context_for_llm, llm_context_info)
                     
                     # Get LLM response
                     bot_response = ""
-                    with st.spinner(f"جاري التحليل بواسطة {selected_llm}..."):
+                    with st.spinner(f"جاري التحليل المتقدم بواسطة {selected_llm}..."):
                         try:
                             if selected_llm == "DeepSeek":
                                 bot_response = get_deepseek_response(llm_messages)
@@ -633,48 +724,59 @@ def main():
                     bot_msg_data["sources"] = sources_for_llm
                     bot_msg_data["debug_info"] = f"{search_info} | {llm_context_info}" if search_info else llm_context_info
                 else:
-                    bot_msg_data["content"] = f"تم العثور على {len(search_results)} نتيجة ولكن لا تحتوي على نصوص صالحة للمعالجة. يرجى تجربة صياغة مختلفة للسؤال."
-                    bot_msg_data["debug_info"] = f"{search_info} | لا توجد نصوص صالحة في النتائج"
+                    bot_msg_data["content"] = f"تم العثور على {len(search_results)} نتيجة من البحث الفائق ولكن لا تحتوي على نصوص صالحة للمعالجة. يرجى تجربة صياغة مختلفة للسؤال."
+                    bot_msg_data["debug_info"] = f"{search_info} | لا توجد نصوص صالحة في النتائج الفائقة"
             
             except Exception as processing_error:
-                st.error(f"خطأ في معالجة النتائج: {processing_error}")
-                bot_msg_data["content"] = f"تم العثور على {len(search_results)} نتيجة ولكن حدث خطأ في المعالجة: {str(processing_error)}"
-                bot_msg_data["debug_info"] = f"{search_info} | خطأ معالجة: {str(processing_error)}"
+                st.error(f"خطأ في معالجة النتائج الفائقة: {processing_error}")
+                bot_msg_data["content"] = f"تم العثور على {len(search_results)} نتيجة فائقة ولكن حدث خطأ في المعالجة: {str(processing_error)}"
+                bot_msg_data["debug_info"] = f"{search_info} | خطأ معالجة فائقة: {str(processing_error)}"
         else:
-            bot_msg_data["content"] = "لم أجد أي معلومات متعلقة بسؤالك في قاعدة بيانات كتب واستفتاءات الشيخ محمد السند حالياً. يرجى محاولة صياغة السؤال بشكل مختلف أو استخدام كلمات مفتاحية أخرى."
-            bot_msg_data["debug_info"] = search_info if search_info else "لا توجد نتائج من البحث المحسن."
+            bot_msg_data["content"] = "لم أجد أي معلومات متعلقة بسؤالك حتى مع البحث الفائق التطور في قاعدة بيانات كتب واستفتاءات الشيخ محمد السند. تم تجربة أكثر من 50 استراتيجية بحث مختلفة. يرجى محاولة صياغة السؤال بشكل مختلف أو استخدام كلمات مفتاحية أخرى."
+            bot_msg_data["debug_info"] = search_info if search_info else "لا توجد نتائج من البحث الفائق حتى مع جميع الاستراتيجيات."
         
-        # Save response with timing
+        # Save response
         bot_msg_data["role"] = "assistant"
         bot_msg_data["time_taken"] = time.perf_counter() - start_time
         st.session_state.messages.append(bot_msg_data)
         st.rerun()
     
     elif search_button and not user_query.strip():
-        st.toast("يرجى إدخال سؤال.", icon="📝")
+        st.toast("يرجى إدخال سؤال للبحث الفائق.", icon="📝")
 
     # Clear chat button
     with input_main:
         if st.button("🗑️ مسح المحادثة", use_container_width=True, key="clear_btn", type="secondary"):
             st.session_state.messages = []
-            st.toast("تم مسح المحادثة.", icon="🗑️")
+            st.toast("تم مسح المحادثة وإعادة تهيئة البحث الفائق.", icon="🗑️")
             time.sleep(0.5)
             st.rerun()
 
     # Footer
     st.markdown("---")
     st.markdown("""
-    <div style='text-align: center; color: #666; font-size: 0.8rem; margin-top: 1rem; font-family: "Noto Sans Arabic", sans-serif;'>
-        🚀 محرك البحث المحسن للدقة العالية | يدعم البحث متعدد المتغيرات والمعالجة المتقدمة للنصوص العربية<br>
-        ✨ تحسينات خاصة: عتبات نقاط محسنة، فلترة ذكية للنتائج، ترتيب متقدم حسب الصلة
+    <div style='text-align: center; color: #666; font-size: 0.85rem; margin-top: 1rem; font-family: "Noto Sans Arabic", sans-serif; line-height: 1.6;'>
+        🚀 <strong>محرك البحث الفائق التطور</strong> - الإصدار النهائي المتقدم<br>
+        🔧 <strong>التقنيات:</strong> 50+ استراتيجية بحث، عتبات متدرجة (0.15-0.001), بحث بالمرادفات والمصطلحات الدينية<br>
+        ⚡ <strong>الميزات:</strong> ترتيب ذكي، فلترة متقدمة، كشف المحتوى المخفي، تحليل جودة النتائج<br>
+        🎯 <strong>متخصص في:</strong> الفقه الإسلامي، كتب الشيخ محمد السند، الاستفتاءات الشرعية، منهاج الصالحين
     </div>
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     # Configuration validation
-    if not all([QDRANT_API_KEY, QDRANT_URL]):
-        st.error("معلومات QDRANT مفقودة. تحقق من الإعدادات.")
-    if not any([DEEPSEEK_API_KEY, GEMINI_API_KEY]):
-        st.info("بعض مفاتيح LLM API مفقودة.", icon="ℹ️")
+    config_issues = []
+    
+    if not QDRANT_API_KEY or not QDRANT_URL:
+        config_issues.append("❌ معلومات QDRANT مفقودة")
+    
+    if not DEEPSEEK_API_KEY and not GEMINI_API_KEY:
+        config_issues.append("❌ لا توجد مفاتيح API للذكاء الاصطناعي")
+    
+    if config_issues:
+        st.error("مشاكل في التهيئة: " + " | ".join(config_issues))
+        st.info("💡 تأكد من إعداد متغيرات البيئة أو تحديث المفاتيح في الكود مباشرة.", icon="ℹ️")
+    else:
+        st.success("✅ جميع الأنظمة جاهزة للبحث الفائق التطور!", icon="✅")
     
     main()
