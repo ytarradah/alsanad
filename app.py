@@ -1,31 +1,26 @@
 import streamlit as st
 import os
 import time
-#from datetime import datetime # Unused
-#import json # Unused
+import unicodedata
+import re
 import requests
 from qdrant_client import QdrantClient, models as qdrant_models
 from sentence_transformers import SentenceTransformer
-#Removed OpenAI import: from openai import OpenAI
 import google.generativeai as genai
 
 # ----------------------
 # Configuration
 # ----------------------
-QDRANT_URL = os.getenv("QDRANT_URL", "YOUR_QDRANT_URL_PLACEHOLDER")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "YOUR_QDRANT_API_KEY_PLACEHOLDER")
+QDRANT_URL = os.getenv("QDRANT_URL", "https://993e7bbb-cbe2-4b82-b672-90c4aed8585e.europe-west3-0.gcp.cloud.qdrant.io:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.qRNtWMTIR32MSM6KUe3lE5qJ0fS5KgyAf86EKQgQ1FQ")
 COLLECTION_NAME = "arabic_documents_enhanced" 
 
 # --- API Key Management ---
-# OPENAI_API_KEY Removed
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-14f267781a6f474a9d0ec8240383dae4")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_PLACEHOLDER")
-
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyASlapu6AYYwOQAJJ3v-2FSKHnxIOZoPbY")
 
 # --- Initialize API Clients ---
-# openai_client initialization block removed
-
 gemini_initial_configured = False
 if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER": 
     try:
@@ -38,7 +33,123 @@ else:
     print("Gemini API key is missing or a placeholder. Gemini features will be limited.")
 
 # ----------------------
-# Arabic CSS Styling
+# Enhanced Arabic Text Processing
+# ----------------------
+def normalize_arabic_text_enhanced(text):
+    """Enhanced Arabic text normalization for better search"""
+    if not text:
+        return text
+    
+    # Remove diacritics (تشكيل)
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    
+    # Normalize Arabic characters
+    replacements = {
+        'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',  # Alef variations
+        'ى': 'ي',  # Ya variations
+        'ة': 'ه',  # Ta marbuta
+        'ؤ': 'و', 'ئ': 'ي',  # Hamza
+        '\u200c': '',  # Zero-width non-joiner
+        '\u200d': '',  # Zero-width joiner
+        '\ufeff': '',  # BOM
+        '\u200b': '',  # Zero-width space
+        '؟': '?', '؛': ';', '،': ',',  # Punctuation
+    }
+    
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    
+    # Clean and normalize whitespace
+    text = ' '.join(text.split())
+    return text
+
+def extract_arabic_keywords_enhanced(text):
+    """Extract meaningful Arabic keywords by removing stop words"""
+    if not text:
+        return []
+    
+    # Comprehensive Arabic stop words
+    arabic_stopwords = {
+        # Pronouns
+        'هو', 'هي', 'هم', 'هن', 'أنت', 'أنتم', 'أنتن', 'أنا', 'نحن',
+        'إياه', 'إياها', 'إياهم', 'إياهن', 'إياك', 'إياكم', 'إياكن', 'إياي', 'إيانا',
+        
+        # Demonstratives
+        'هذا', 'هذه', 'ذلك', 'تلك', 'أولئك', 'هؤلاء', 'التي', 'الذي', 'اللذان', 'اللتان',
+        
+        # Prepositions
+        'في', 'من', 'إلى', 'على', 'عن', 'مع', 'بعد', 'قبل', 'تحت', 'فوق', 'أمام', 'خلف',
+        'بين', 'ضد', 'نحو', 'حول', 'دون', 'سوى', 'خلال', 'عبر', 'لدى', 'عند',
+        
+        # Conjunctions and particles
+        'و', 'أو', 'أم', 'لكن', 'لكن', 'غير', 'إلا', 'بل', 'ثم', 'كذلك',
+        'أن', 'إن', 'كي', 'لكي', 'حتى', 'لولا', 'لوما', 'لو', 'إذا', 'إذ', 'حيث',
+        
+        # Auxiliaries and modals
+        'كان', 'كانت', 'كانوا', 'كن', 'يكون', 'تكون', 'يكونوا', 'تكن',
+        'قد', 'لقد', 'سوف', 'لن', 'لم', 'لما', 'ليس', 'ليست', 'ليسوا', 'لسن',
+        
+        # Question words
+        'ما', 'ماذا', 'متى', 'أين', 'لماذا', 'كم', 'أي', 'أية', 'كيف', 'أنى',
+        
+        # Articles and determiners
+        'ال', 'كل', 'جميع', 'بعض', 'معظم',
+        
+        # Common short words
+        'ف', 'ب', 'ك', 'ل', 'عن', 'لا', 'نعم', 'كلا'
+    }
+    
+    # Extract Arabic words (2+ characters)
+    words = re.findall(r'[\u0600-\u06FF\u0750-\u077F]{2,}', text)
+    
+    # Filter out stop words and normalize
+    keywords = []
+    for word in words:
+        normalized_word = normalize_arabic_text_enhanced(word)
+        if len(normalized_word) > 2 and normalized_word not in arabic_stopwords:
+            keywords.append(normalized_word)
+    
+    return list(set(keywords))  # Remove duplicates
+
+def create_query_variants(query):
+    """Create multiple variants of the query for better matching"""
+    if not query:
+        return [query]
+    
+    variants = []
+    
+    # 1. Original query
+    variants.append(('original', query))
+    
+    # 2. Normalized query
+    normalized_query = normalize_arabic_text_enhanced(query)
+    if normalized_query != query and normalized_query:
+        variants.append(('normalized', normalized_query))
+    
+    # 3. Keywords only
+    keywords = extract_arabic_keywords_enhanced(query)
+    if keywords:
+        keywords_query = ' '.join(keywords)
+        variants.append(('keywords', keywords_query))
+    
+    # 4. Individual important words (for fallback)
+    important_words = []
+    for word in query.split():
+        if len(word) > 3:
+            # Also try normalized version of the word
+            normalized_word = normalize_arabic_text_enhanced(word)
+            important_words.append(word)
+            if normalized_word != word:
+                important_words.append(normalized_word)
+    
+    # Add top 2 important words as separate queries
+    for word in important_words[:2]:
+        variants.append(('word', word))
+    
+    return variants
+
+# ----------------------
+# Arabic CSS Styling (Same as before)
 # ----------------------
 def load_arabic_css():
     st.markdown("""
@@ -68,7 +179,7 @@ def load_arabic_css():
     .bot-message { background: linear-gradient(135deg, #5DADE2 0%, #3498DB 100%); color: white; padding: 1rem; border-radius: 15px 15px 15px 5px; margin: 0.5rem 0; direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', sans-serif; font-size: 1.1rem; font-weight: 500; line-height: 1.8; box-shadow: 0 2px 10px rgba(0,0,0,0.1); word-wrap: break-word; }
     .time-taken { font-size: 0.8rem; color: #777; margin-top: 0.3rem; direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', sans-serif;}
     .debug-info { background: #fff3cd; padding: 0.5rem; border-radius: 5px; margin: 0.5rem 0; font-size: 0.85rem; direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', sans-serif; border: 1px solid #ffeeba; word-wrap: break-word; }
-    .debug-info-results { font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; } /* For retrieved results list */
+    .debug-info-results { font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
     .api-used { background: #e3f2fd; color: #1976d2; padding: 0.3rem 0.6rem; border-radius: 5px; font-size: 0.85rem; margin-top: 0.5rem; display: inline-block; font-family: 'Noto Sans Arabic', sans-serif; }
     .source-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 1rem; direction: rtl; } 
     .source-info { background: #f0f2f6; padding: 0.25rem 0.4rem; border-radius: 6px; font-size: 0.75rem; color: #555; direction: rtl; text-align: right; font-family: 'Noto Sans Arabic', sans-serif; border: 1px solid #ddd; transition: transform 0.2s ease-in-out; display: flex; flex-direction: column; justify-content: center; overflow-wrap: break-word; word-break: break-word; min-height: 50px; }
@@ -77,11 +188,12 @@ def load_arabic_css():
     div[data-testid="stSpinner"] { direction: rtl; width: 100%;}
     div[data-testid="stSpinner"] > div { display: flex; flex-direction: row-reverse; align-items: center; justify-content: flex-start; text-align: right !important; width: auto; margin: 0 auto 0 0; }
     div[data-testid="stSpinner"] p { font-size: 1.15em !important; font-family: 'Noto Sans Arabic', sans-serif !important; margin-right: 8px !important; text-align: right !important;}
+    .search-debug { background: #e8f5e8; border: 1px solid #4caf50; padding: 0.5rem; border-radius: 5px; margin: 0.5rem 0; font-family: 'Noto Sans Arabic', sans-serif; }
     </style>
     """, unsafe_allow_html=True)
 
 # ----------------------
-# Status Check & Info Functions
+# Status Check & Info Functions (Same as before)
 # ----------------------
 @st.cache_data(ttl=300)
 def get_qdrant_info():
@@ -104,7 +216,6 @@ def get_qdrant_info():
 @st.cache_data(ttl=300)
 def check_api_status(api_name):
     global gemini_initial_configured 
-    # OpenAI block removed
     if api_name == "DeepSeek":
         if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER": 
             return False, "المفتاح مفقود أو نائب"
@@ -130,7 +241,7 @@ def check_api_status(api_name):
     return False, "API غير معروف"
 
 # ----------------------
-# Initialize Components Resource
+# Initialize Components Resource (Same as before)
 # ----------------------
 @st.cache_resource
 def init_qdrant_client_resource():
@@ -149,66 +260,178 @@ def init_embedding_model_resource():
     except Exception as e: st.error(f"فشل تحميل نموذج التضمين '{model_name}': {e}"); return None
 
 # ----------------------
-# Document Search Functions
+# ENHANCED SEARCH FUNCTION - This is the new improved version
 # ----------------------
 def comprehensive_search(query, max_results=50):
+    """
+    Enhanced comprehensive search with Arabic text processing and multiple strategies
+    """
+    
     embedding_model = init_embedding_model_resource()
-    if not embedding_model: return [], "فشل تحميل نموذج التضمين.", [] 
+    if not embedding_model: 
+        return [], "فشل تحميل نموذج التضمين.", []
+    
     qdrant_c = init_qdrant_client_resource()
-    if not qdrant_c: return [], "فشل الاتصال بـ Qdrant.", [] 
+    if not qdrant_c: 
+        return [], "فشل الاتصال بـ Qdrant.", []
+    
     try:
-        print(f"Query: '{query}', Model: {type(embedding_model)}")
-        query_embedding = embedding_model.encode([query])[0].tolist()
-        print(f"Query embedding dim: {len(query_embedding)}")
-        score_thresh = 0.20 
-        search_results_qdrant = qdrant_c.search(
-            collection_name=COLLECTION_NAME, query_vector=query_embedding,
-            limit=max_results, with_payload=True, score_threshold=score_thresh
-        )
+        print(f"Enhanced search for: '{query}'")
+        
+        # Create multiple query variants for better matching
+        query_variants = create_query_variants(query)
+        
+        # Search with multiple strategies
+        all_results = []
+        seen_ids = set()
+        search_info_parts = []
+        
+        print(f"Testing {len(query_variants)} query variants...")
+        
+        # Use different thresholds for different query types
+        variant_thresholds = {
+            'original': 0.2,      # Your diagnostic showed 0.2 works well
+            'normalized': 0.18,   # Slightly lower for normalized
+            'keywords': 0.15,     # Lower for keyword-only search
+            'word': 0.12          # Lowest for individual words
+        }
+        
+        for variant_type, variant_query in query_variants:
+            try:
+                # Choose threshold based on variant type
+                threshold = variant_thresholds.get(variant_type, 0.15)
+                
+                # Create embedding for this variant
+                query_embedding = embedding_model.encode([variant_query])[0].tolist()
+                print(f"Query embedding dim: {len(query_embedding)}")
+                
+                # Search with this variant
+                search_results_qdrant = qdrant_c.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=query_embedding,
+                    limit=max_results // 2,  # Get more results per variant
+                    with_payload=True,
+                    score_threshold=threshold
+                )
+                
+                # Add new results (avoid duplicates)
+                new_results_count = 0
+                for result in search_results_qdrant:
+                    if result.id not in seen_ids:
+                        seen_ids.add(result.id)
+                        all_results.append(result)
+                        new_results_count += 1
+                
+                if new_results_count > 0:
+                    search_info_parts.append(f"{variant_type} ({threshold}): {new_results_count} نتيجة")
+                    print(f"✅ {variant_type} found {new_results_count} new results")
+                else:
+                    search_info_parts.append(f"{variant_type}: 0 نتائج")
+                
+                # If we have enough good results, don't need all variants
+                if len(all_results) >= 25:
+                    break
+                    
+            except Exception as e:
+                print(f"❌ Error with variant {variant_type}: {e}")
+                search_info_parts.append(f"{variant_type}: خطأ")
+                continue
+        
+        # Sort all results by score (highest first)
+        all_results.sort(key=lambda x: x.score, reverse=True)
+        
+        # Limit to requested number of results
+        final_results = all_results[:max_results]
+        
+        # Create detailed search info for debugging
         initial_search_details = []
-        if search_results_qdrant: 
-            initial_search_details = [{"id": sr.id, "score": sr.score, 
-                                    "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A', 
-                                    "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''} 
-                                    for sr in search_results_qdrant]
-
-        search_info = f"البحث الأساسي: وجدت {len(search_results_qdrant)} نتيجة بعتبة {score_thresh} لـ '{COLLECTION_NAME}'."
+        if final_results:
+            initial_search_details = [
+                {
+                    "id": sr.id,
+                    "score": sr.score,
+                    "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A',
+                    "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''
+                } 
+                for sr in final_results[:15]  # Show top 15 in debug
+            ]
         
-        final_results = search_results_qdrant
-        if len(search_results_qdrant) < 5 and ' ' in query: 
-            search_info += " | محاولة بالكلمات المفتاحية..."
-            kw_results_list = []
-            for keyword in query.split()[:3]: 
-                if len(keyword) > 2:
-                    kw_emb = embedding_model.encode([keyword])[0].tolist()
-                    kw_sr = qdrant_c.search(collection_name=COLLECTION_NAME, query_vector=kw_emb, limit=5, with_payload=True, score_threshold=0.15)
-                    kw_results_list.extend(kw_sr)
-            seen_ids = {res.id for res in search_results_qdrant}
-            combined = list(search_results_qdrant)
-            for res in kw_results_list:
-                if res.id not in seen_ids: seen_ids.add(res.id); combined.append(res)
-            final_results = sorted(combined, key=lambda x: x.score, reverse=True)[:max_results]
-            search_info += f" | بعد الكلمات المفتاحية: {len(final_results)} نتيجة."
+        # Create comprehensive search info
+        total_variants_tried = len([p for p in search_info_parts if 'خطأ' not in p])
+        search_info = f"بحث محسن: {len(final_results)} نتيجة من {total_variants_tried} متغير. " + " | ".join(search_info_parts)
         
-        return final_results, search_info, initial_search_details 
+        print(f"✅ Final results: {len(final_results)}")
+        
+        # Additional fallback if still no results
+        if len(final_results) == 0:
+            print("🔄 Trying emergency fallback with very low threshold...")
+            try:
+                emergency_embedding = embedding_model.encode([query])[0].tolist()
+                emergency_results = qdrant_c.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=emergency_embedding,
+                    limit=max_results,
+                    with_payload=True,
+                    score_threshold=0.05  # Very low threshold
+                )
+                
+                if emergency_results:
+                    emergency_details = [
+                        {
+                            "id": sr.id,
+                            "score": sr.score,
+                            "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A',
+                            "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''
+                        } 
+                        for sr in emergency_results
+                    ]
+                    
+                    return emergency_results, f"{search_info} | بحث طوارئ: {len(emergency_results)} نتيجة", emergency_details
+            except Exception as emergency_error:
+                print(f"❌ Emergency fallback failed: {emergency_error}")
+        
+        return final_results, search_info, initial_search_details
+        
     except Exception as e:
-        print(f"Error in comprehensive_search: {e}")
-        err_content = str(e)
-        if "vector dimension error" in err_content.lower() or "expected dim" in err_content.lower():
-            st.error(f"خطأ أبعاد المتجه! '{COLLECTION_NAME}'. التفاصيل: {err_content}")
-        elif "Not found: Collection" in err_content or "NOT_FOUND" in err_content.upper():
-            st.error(f"خطأ: المجموعة '{COLLECTION_NAME}' غير موجودة.")
-        return [], f"خطأ بحث: {err_content}", []
+        print(f"Enhanced search error: {e}")
+        error_msg = f"خطأ بحث محسن: {str(e)[:100]}"
+        
+        # Final fallback to basic search
+        try:
+            print("🔄 Trying basic fallback search...")
+            simple_embedding = embedding_model.encode([query])[0].tolist()
+            fallback_results = qdrant_c.search(
+                collection_name=COLLECTION_NAME,
+                query_vector=simple_embedding,
+                limit=max_results,
+                with_payload=True,
+                score_threshold=0.1  # Lower threshold for fallback
+            )
+            
+            fallback_details = [
+                {
+                    "id": sr.id,
+                    "score": sr.score,
+                    "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A',
+                    "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''
+                } 
+                for sr in fallback_results
+            ]
+            
+            print(f"✅ Basic fallback found: {len(fallback_results)} results")
+            return fallback_results, f"{error_msg} | بحث أساسي: {len(fallback_results)} نتيجة", fallback_details
+            
+        except Exception as fallback_error:
+            print(f"❌ All search methods failed: {fallback_error}")
+            return [], f"{error_msg} | فشل كل طرق البحث: {str(fallback_error)[:50]}", []
 
 # ----------------------
-# API Response Functions
+# API Response Functions (Same as before but with better error handling)
 # ----------------------
 def prepare_llm_messages(user_question, context, context_info):
     system_prompt = "أنت مساعد للبحث في كتب واستفتاءات الشيخ محمد السند فقط.\nقواعد حتمية لا يمكن تجاوزها:\n1. أجب فقط من النصوص المعطاة أدناه (\"المصادر المتاحة\") - لا استثناءات.\n2. إذا لم تجد الإجابة الكاملة في النصوص، قل بوضوح: \"لم أجد إجابة كافية في المصادر المتاحة بخصوص هذا السؤال.\"\n3. ممنوع منعاً باتاً إضافة أي معلومة من خارج النصوص المعطاة. لا تستخدم معلوماتك العامة أو معرفتك السابقة.\n4. اقتبس مباشرة من النصوص عند الإجابة قدر الإمكان، مع الإشارة إلى المصدر إذا كان متاحاً في النص (مثال: [نص ١]).\n5. إذا وجدت إجابة جزئية، اذكرها وأوضح أنها غير كاملة أو تغطي جانباً من السؤال.\n6. هدفك هو تقديم إجابة دقيقة وموثوقة بناءً على ما هو متوفر في النصوص فقط.\n7. إذا كانت النصوص لا تحتوي على إجابة، لا تحاول استنتاج أو تخمين الإجابة.\nتذكر: أي معلومة ليست في النصوص أدناه = لا تذكرها أبداً. كن دقيقاً ومقتصراً على المصادر."
     user_content = (f"السؤال المطروح: {user_question}\n\nالمصادر المتاحة من قاعدة البيانات فقط (أجب بناءً عليها حصراً):\n{context}\n\nمعلومات إضافية عن السياق: {context_info}\n\nالتعليمات: يرجى تقديم إجابة بناءً على النصوص أعلاه فقط. إذا لم تكن الإجابة موجودة، وضح ذلك.")
     return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
-
-# get_openai_response function removed
 
 def get_deepseek_response(messages, max_tokens=2000):
     if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER": 
@@ -255,17 +478,46 @@ def get_gemini_response(messages, max_tokens=2000):
     except Exception as e: print(f"Gemini API error: {e}"); return f"خطأ Gemini: {str(e)}"
 
 # ----------------------
+# Enhanced Debug Function
+# ----------------------
+def show_search_debug(search_res, db_dbg_info, initial_details, user_q, show_debug=True):
+    """Enhanced debugging display for search results"""
+    if not show_debug:
+        return
+    
+    # Enhanced debug box
+    debug_content = f"""
+🔍 **نتائج البحث المحسن:**
+- الاستعلام: "{user_q}"
+- النتائج الموجودة: {len(search_res)}
+- أفضل نتيجة: {max([r.score for r in search_res]):.3f} إذا وجدت
+- معلومات البحث: {db_dbg_info}
+    """
+    
+    if search_res:
+        debug_content += f"\n\n**أفضل 3 نتائج:**\n"
+        for i, result in enumerate(search_res[:3]):
+            source = result.payload.get('source', 'Unknown') if result.payload else 'Unknown'
+            score = result.score
+            preview = result.payload.get('text', '')[:150] + '...' if result.payload else 'No text'
+            debug_content += f"{i+1}. {source} (Score: {score:.3f})\n   {preview}\n\n"
+    else:
+        debug_content += "\n❌ **لم يتم العثور على نتائج**"
+    
+    st.markdown(f'<div class="search-debug">{debug_content}</div>', unsafe_allow_html=True)
+
+# ----------------------
 # Main Application
 # ----------------------
 def main():
     st.set_page_config(page_title="المرجع السند - بحث", page_icon="🕌", layout="wide", initial_sidebar_state="collapsed")
     load_arabic_css()
-    st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند</h1><p class="sub-header">محرك بحث الكتب والاستفتاءات</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند</h1><p class="sub-header">محرك بحث الكتب والاستفتاءات المحسن</p>', unsafe_allow_html=True)
 
     with st.expander("⚙️ الإعدادات وحالة الأنظمة", expanded=True):
         st.markdown("<div style='text-align: right; font-weight: bold; margin-bottom: 0.5rem;'>اختر محرك الذكاء الاصطناعي:</div>", unsafe_allow_html=True)
         llm_opts, llm_caps, active_llms_idx = [], [], []
-        llm_apis = [("DeepSeek", "DeepSeek"), ("Gemini", "Gemini")] # OpenAI removed from list
+        llm_apis = [("DeepSeek", "DeepSeek"), ("Gemini", "Gemini")]
         def_idx = 0
         for i, (disp, internal) in enumerate(llm_apis):
             ok, msg = check_api_status(internal)
@@ -282,10 +534,10 @@ def main():
         st.markdown(f'<div style="display: flex; justify-content: center;"><div class="status-box" style="width: 90%; max-width: 450px;">Qdrant DB: {q_stat_txt}</div></div>', unsafe_allow_html=True)
 
         st.markdown("<div style='text-align: right; font-weight: bold; margin-top:0.5rem;'>مستوى البحث:</div>", unsafe_allow_html=True)
-        s_depth_opts = ["بحث سريع (10)", "بحث متوسط (25)", "بحث شامل (50)"]
+        s_depth_opts = ["بحث سريع (15)", "بحث متوسط (30)", "بحث شامل (50)"]
         s_depth = st.radio("مستوى البحث:", s_depth_opts, index=1, horizontal=True, key="s_depth_radio", label_visibility="collapsed")
-        max_db_res = {"بحث سريع (10)": 10, "بحث متوسط (25)": 25, "بحث شامل (50)": 50}[s_depth]
-        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb") 
+        max_db_res = {"بحث سريع (15)": 15, "بحث متوسط (30)": 30, "بحث شامل (50)": 50}[s_depth]
+        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb")
 
     if q_info_data['status'] and q_info_data['details']:
         with st.expander("ℹ️ معلومات قاعدة البيانات", expanded=False):
@@ -295,6 +547,8 @@ def main():
     elif not q_info_data['status']: st.warning(f"Qdrant: {q_info_data['message']}.", icon="⚠️")
 
     if "messages" not in st.session_state: st.session_state.messages = []
+    
+    # Display chat history
     chat_container = st.container()
     with chat_container:
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
@@ -314,7 +568,7 @@ def main():
                         display_id = str(d.get('id', 'N/A')) 
                         details_str_parts.append(f"  {d_idx+1}. ID: {display_id[:8]}... | Score: {d.get('score', 0):.3f} | Source: {d.get('source', 'N/A')} | Preview: {d.get('text_preview', 'N/A')}")
                     details_str = "\n".join(details_str_parts)
-                    full_debug_info_parts.append(f"نتائج Qdrant الأولية ({len(msg_item['initial_search_details'])}):\n{details_str}")
+                    full_debug_info_parts.append(f"نتائج Qdrant المفصلة ({len(msg_item['initial_search_details'])}):\n{details_str}")
                 
                 if show_dbg and full_debug_info_parts: 
                     st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية:<div class="debug-info-results">{"<hr>".join(full_debug_info_parts)}</div></div>', unsafe_allow_html=True)
@@ -328,59 +582,93 @@ def main():
                     st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # Search input section
     st.markdown("<hr style='margin-top:1.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
     _, input_main, _ = st.columns([0.2, 2.6, 0.2])
     with input_main:
-        user_q = st.text_area("سؤالك...", placeholder="اكتب سؤالك هنا...", key="user_input", height=120, label_visibility="collapsed")
+        user_q = st.text_area("سؤالك...", placeholder="اكتب سؤالك هنا (مثال: صلاة ليلة الرغائب، قاعدة التسامح في أدلة السنن)...", key="user_input", height=120, label_visibility="collapsed")
         st.markdown('<div class="search-button-container">', unsafe_allow_html=True)
-        send_btn = st.button("🔍 بحث وإجابة", type="primary", use_container_width=False, key="send_btn")
+        send_btn = st.button("🔍 بحث وإجابة محسن", type="primary", use_container_width=False, key="send_btn")
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # Process search when button is clicked
     if send_btn and user_q.strip():
         st.session_state.messages.append({"role": "user", "content": user_q.strip()})
         s_time = time.perf_counter()
         bot_msg_data = {"api_used": sel_llm}
         
-        with st.spinner(f"جاري البحث ({max_db_res} نتيجة)..."):
-            search_res, db_dbg_info, initial_details = comprehensive_search(user_q.strip(), max_results=max_db_res)
-            bot_msg_data["initial_search_details"] = initial_details 
-
-        if search_res:
-            ctx_texts, srcs_for_llm = [], []
-            total_ch, max_ch_ctx = 0, 25000
-            for i, res_item in enumerate(search_res):
-                src_id_str = str(res_item.id) if res_item.id is not None else f"unknown_id_{i}"
-                src_name = res_item.payload.get('source', f'وثيقة {src_id_str[:6]}') if res_item.payload else f'وثيقة {src_id_str[:6]}'
-                txt = res_item.payload.get('text', '') if res_item.payload else ''
+        # Enhanced search with better error handling
+        with st.spinner(f"جاري البحث المحسن ({max_db_res} نتيجة)..."):
+            try:
+                search_res, db_dbg_info, initial_details = comprehensive_search(user_q.strip(), max_results=max_db_res)
+                bot_msg_data["initial_search_details"] = initial_details
                 
-                if txt:
-                    trunc_txt = txt[:1500] + ("..." if len(txt) > 1500 else "")
-                    if total_ch + len(trunc_txt) < max_ch_ctx:
-                        ctx_texts.append(f"[نص {i+1} من '{src_name}']: {trunc_txt}")
-                        srcs_for_llm.append({'source': src_name, 'score': res_item.score, 'id': res_item.id})
-                        total_ch += len(trunc_txt)
-                    else:
-                        ctx_texts.append(f"\n[ملاحظة: تم اقتصار النصوص. {len(search_res)-i} نص إضافي لم يرسل.]")
-                        db_dbg_info += f" | اقتصار السياق، {len(search_res)-i} نصوص لم ترسل."
-                        break
+                # Show debug information if enabled
+                if show_dbg:
+                    show_search_debug(search_res, db_dbg_info, initial_details, user_q.strip(), show_debug=True)
+                
+            except Exception as search_error:
+                st.error(f"خطأ في البحث: {search_error}")
+                search_res, db_dbg_info, initial_details = [], f"خطأ في البحث: {str(search_error)}", []
+
+        # Process search results
+        if search_res:
+            try:
+                ctx_texts, srcs_for_llm = [], []
+                total_ch, max_ch_ctx = 0, 25000
+                
+                for i, res_item in enumerate(search_res):
+                    # Enhanced error handling for result processing
+                    try:
+                        src_id_str = str(res_item.id) if res_item.id is not None else f"unknown_id_{i}"
+                        src_name = res_item.payload.get('source', f'وثيقة {src_id_str[:6]}') if res_item.payload else f'وثيقة {src_id_str[:6]}'
+                        txt = res_item.payload.get('text', '') if res_item.payload else ''
+                        
+                        if txt and len(txt.strip()) > 0:  # Ensure text is not empty
+                            trunc_txt = txt[:1500] + ("..." if len(txt) > 1500 else "")
+                            if total_ch + len(trunc_txt) < max_ch_ctx:
+                                ctx_texts.append(f"[نص {i+1} من '{src_name}']: {trunc_txt}")
+                                srcs_for_llm.append({'source': src_name, 'score': res_item.score, 'id': res_item.id})
+                                total_ch += len(trunc_txt)
+                            else:
+                                ctx_texts.append(f"\n[ملاحظة: تم اقتصار النصوص. {len(search_res)-i} نص إضافي لم يرسل.]")
+                                db_dbg_info += f" | اقتصار السياق، {len(search_res)-i} نصوص لم ترسل."
+                                break
+                    except Exception as result_error:
+                        print(f"Error processing result {i}: {result_error}")
+                        continue
+                
+                if ctx_texts:  # Only proceed if we have valid context
+                    ctx_for_llm = "\n\n---\n\n".join(ctx_texts)
+                    llm_ctx_info = f"أرسل {len(srcs_for_llm)} نص للتحليل (~{total_ch//1000} ألف حرف)."
+                    llm_msgs = prepare_llm_messages(user_q.strip(), ctx_for_llm, llm_ctx_info)
+                    
+                    bot_response = ""
+                    with st.spinner(f"جاري التحليل بواسطة {sel_llm}..."):
+                        try:
+                            if sel_llm == "DeepSeek": 
+                                bot_response = get_deepseek_response(llm_msgs)
+                            elif sel_llm == "Gemini": 
+                                bot_response = get_gemini_response(llm_msgs)
+                            else: 
+                                bot_response = "المحرك المحدد غير معروف."
+                        except Exception as llm_error:
+                            bot_response = f"خطأ في الحصول على الرد من {sel_llm}: {str(llm_error)}"
+                    
+                    bot_msg_data["content"] = bot_response
+                    bot_msg_data["sources"] = srcs_for_llm
+                    bot_msg_data["debug_info"] = f"{db_dbg_info} | {llm_ctx_info}" if db_dbg_info else llm_ctx_info
+                else:
+                    bot_msg_data["content"] = f"تم العثور على {len(search_res)} نتيجة ولكن لا يحتوون على نصوص صالحة للمعالجة. يرجى تجربة استعلام مختلف."
+                    bot_msg_data["debug_info"] = f"{db_dbg_info} | لا توجد نصوص صالحة في النتائج"
             
-            ctx_for_llm = "\n\n---\n\n".join(ctx_texts)
-            llm_ctx_info = f"أرسل {len(srcs_for_llm)} نص للتحليل (~{total_ch//1000} ألف حرف)."
-            llm_msgs = prepare_llm_messages(user_q.strip(), ctx_for_llm, llm_ctx_info)
-            
-            bot_response = ""
-            with st.spinner(f"جاري التحليل بواسطة {sel_llm}..."):
-                # OpenAI option removed
-                if sel_llm == "DeepSeek": bot_response = get_deepseek_response(llm_msgs)
-                elif sel_llm == "Gemini": bot_response = get_gemini_response(llm_msgs)
-                else: bot_response = "المحرك المحدد غير معروف."
-            
-            bot_msg_data["content"] = bot_response
-            bot_msg_data["sources"] = srcs_for_llm
-            bot_msg_data["debug_info"] = f"{db_dbg_info} | {llm_ctx_info}" if db_dbg_info else llm_ctx_info
+            except Exception as processing_error:
+                st.error(f"خطأ في معالجة النتائج: {processing_error}")
+                bot_msg_data["content"] = f"تم العثور على {len(search_res)} نتيجة ولكن حدث خطأ في المعالجة: {str(processing_error)}"
+                bot_msg_data["debug_info"] = f"{db_dbg_info} | خطأ معالجة: {str(processing_error)}"
         else:
             bot_msg_data["content"] = "لم أجد أي معلومات متعلقة بسؤالك في قاعدة بيانات كتب واستفتاءات الشيخ محمد السند حالياً. يرجى محاولة صياغة السؤال بشكل مختلف أو استخدام كلمات مفتاحية أخرى."
-            bot_msg_data["debug_info"] = db_dbg_info if db_dbg_info else "No results from Qdrant."
+            bot_msg_data["debug_info"] = db_dbg_info if db_dbg_info else "لا توجد نتائج من البحث المحسن."
         
         bot_msg_data["role"] = "assistant"
         bot_msg_data["time_taken"] = time.perf_counter() - s_time
@@ -389,61 +677,29 @@ def main():
     elif send_btn and not user_q.strip(): 
         st.toast("يرجى إدخال سؤال.", icon="📝")
 
+    # Clear chat button
     with input_main:
         if st.button("🗑️ مسح المحادثة", use_container_width=True, key="clear_btn", type="secondary"):
-            st.session_state.messages = []; st.toast("تم مسح المحادثة.", icon="🗑️"); time.sleep(0.5); st.rerun()
+            st.session_state.messages = []
+            st.toast("تم مسح المحادثة.", icon="🗑️")
+            time.sleep(0.5)
+            st.rerun()
+
+    # Footer with enhancement info
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666; font-size: 0.8rem; margin-top: 1rem;'>
+        🚀 محرك البحث المحسن | يدعم البحث متعدد المتغيرات والمعالجة المتقدمة للنصوص العربية
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
+    # Configuration checks
     if not all([QDRANT_API_KEY and QDRANT_API_KEY != "YOUR_QDRANT_API_KEY_PLACEHOLDER", 
                 QDRANT_URL and QDRANT_URL != "YOUR_QDRANT_URL_PLACEHOLDER"]):
         st.error("معلومات QDRANT مفقودة أو هي قيم افتراضية. تحقق من الإعدادات.")
     if not any([DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER", 
                 GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER"]): 
         st.info("بعض مفاتيح LLM API مفقودة أو هي قيم افتراضية.", icon="ℹ️")
+    
     main()
-
-# --- Deployment Notes ---
-# This Streamlit application can be deployed in several ways:
-#
-# 1. VPS (e.g., Hostinger VPS):
-#    - Ensure Python and pip are installed.
-#    - Install dependencies: pip install -r requirements.txt
-#    - Run the app: streamlit run app.py --server.port <your_chosen_port>
-#    - For production, it's recommended to use a web server like Nginx or Apache
-#      as a reverse proxy to handle SSL, domain mapping, and serve the app.
-#    - Example Nginx configuration snippet:
-#      location / {
-#          proxy_pass http://localhost:<your_chosen_port>;
-#          proxy_http_version 1.1;
-#          proxy_set_header Upgrade $http_upgrade;
-#          proxy_set_header Connection "upgrade";
-#          proxy_set_header Host $host;
-#          proxy_set_header X-Real-IP $remote_addr;
-#          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-#          proxy_set_header X-Forwarded-Proto $scheme;
-#      }
-#
-# 2. Shared Hosting (e.g., Namecheap with cPanel):
-#    - Shared hosting environments can be more restrictive.
-#    - Look for "Setup Python App" or similar in cPanel.
-#    - You'll need to configure the app's entry point. Streamlit is not a traditional
-#      WSGI app, so direct deployment might be challenging or not fully supported
-#      depending on the host's specific setup for Python apps.
-#    - Ensure all dependencies from requirements.txt can be installed in the
-#      shared hosting environment. Some hosts might have limitations.
-#    - Resource limits (CPU, memory) on shared hosting might also affect performance.
-#    - It's crucial to check your hosting provider's documentation for the best
-#      way to deploy Python web applications.
-#
-# 3. Environment Variables for API Keys:
-#    - This application has been updated to use os.getenv for API keys (QDRANT_URL,
-#      QDRANT_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY).
-#    - Set these environment variables in your deployment environment rather than
-#      hardcoding them directly in the script for better security and flexibility.
-#      For example, in a Linux shell: export GEMINI_API_KEY="your_actual_key"
-#      Or use your hosting provider's interface for setting environment variables.
-#
-# 4. Collection Name:
-#    - The Qdrant collection name (COLLECTION_NAME) is set in the script. Ensure this
-#      collection exists in your Qdrant instance.
-#
