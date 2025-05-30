@@ -1,38 +1,30 @@
 import streamlit as st
+import os
 import time
-from datetime import datetime
-import json
+#from datetime import datetime # Unused
+#import json # Unused
 import requests
 from qdrant_client import QdrantClient, models as qdrant_models
 from sentence_transformers import SentenceTransformer
-from openai import OpenAI
+#Removed OpenAI import: from openai import OpenAI
 import google.generativeai as genai
 
 # ----------------------
 # Configuration
 # ----------------------
-QDRANT_URL = "https://993e7bbb-cbe2-4b82-b672-90c4aed8585e.europe-west3-0.gcp.cloud.qdrant.io:6333"
-QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.qRNtWMTIR32MSM6KUe3lE5qJ0fS5KgyAf86EKQgQ1FQ"
+QDRANT_URL = os.getenv("QDRANT_URL", "YOUR_QDRANT_URL_PLACEHOLDER")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "YOUR_QDRANT_API_KEY_PLACEHOLDER")
 COLLECTION_NAME = "arabic_documents_enhanced" 
 
 # --- API Key Management ---
-OPENAI_API_KEY = "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"
-DEEPSEEK_API_KEY = "sk-14f267781a6f474a9d0ec8240383dae4"
+# OPENAI_API_KEY Removed
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-GEMINI_API_KEY = "AIzaSyASlapu6AYYwOQAJJ3v-2FSKHnxIOZoPbY"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_PLACEHOLDER")
 
 
 # --- Initialize API Clients ---
-openai_client = None
-if OPENAI_API_KEY and OPENAI_API_KEY != "YOUR_OPENAI_API_KEY_PLACEHOLDER": 
-    try:
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("OpenAI client initialized successfully.")
-    except Exception as e:
-        print(f"Failed to initialize OpenAI client: {e}")
-else:
-    print("OpenAI API key is missing or a placeholder. OpenAI features will be limited.")
-
+# openai_client initialization block removed
 
 gemini_initial_configured = False
 if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER": 
@@ -93,7 +85,9 @@ def load_arabic_css():
 # ----------------------
 @st.cache_data(ttl=300)
 def get_qdrant_info():
-    if not QDRANT_API_KEY or not QDRANT_URL: return {"status": False, "message": "بيانات Qdrant مفقودة.", "details": {}}
+    if not QDRANT_API_KEY or QDRANT_API_KEY == "YOUR_QDRANT_API_KEY_PLACEHOLDER" or \
+       not QDRANT_URL or QDRANT_URL == "YOUR_QDRANT_URL_PLACEHOLDER": 
+        return {"status": False, "message": "بيانات Qdrant مفقودة أو هي قيم نائبة.", "details": {}}
     try:
         client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=5) 
         collection_info = client.get_collection(COLLECTION_NAME)
@@ -110,12 +104,10 @@ def get_qdrant_info():
 @st.cache_data(ttl=300)
 def check_api_status(api_name):
     global gemini_initial_configured 
-    if api_name == "OpenAI":
-        if not openai_client: return False, "التهيئة فشلت"
-        try: openai_client.models.list(limit=1); return True, "نشط ✓" 
-        except Exception as e: print(f"OpenAI status error: {e}"); return False, f"غير نشط ({type(e).__name__})"
-    elif api_name == "DeepSeek":
-        if not DEEPSEEK_API_KEY: return False, "المفتاح مفقود"
+    # OpenAI block removed
+    if api_name == "DeepSeek":
+        if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER": 
+            return False, "المفتاح مفقود أو نائب"
         try:
             h = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
             d = {"model": "deepseek-chat", "messages": [{"role": "user", "content": "مرحبا"}], "max_tokens": 1, "stream": False}
@@ -123,7 +115,8 @@ def check_api_status(api_name):
             return (True, "نشط ✓") if r.status_code == 200 else (False, f"خطأ ({r.status_code})") 
         except Exception as e: print(f"DeepSeek status error: {e}"); return False, f"غير نشط ({type(e).__name__})"
     elif api_name == "Gemini":
-        if not GEMINI_API_KEY: return False, "المفتاح مفقود"
+        if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_PLACEHOLDER": 
+            return False, "المفتاح مفقود أو نائب"
         try:
             if not gemini_initial_configured: genai.configure(api_key=GEMINI_API_KEY); gemini_initial_configured = True
             m = genai.GenerativeModel('gemini-1.5-flash') 
@@ -141,7 +134,9 @@ def check_api_status(api_name):
 # ----------------------
 @st.cache_resource
 def init_qdrant_client_resource():
-    if not QDRANT_API_KEY or not QDRANT_URL: st.error("بيانات اتصال Qdrant مفقودة."); return None
+    if not QDRANT_API_KEY or QDRANT_API_KEY == "YOUR_QDRANT_API_KEY_PLACEHOLDER" or \
+       not QDRANT_URL or QDRANT_URL == "YOUR_QDRANT_URL_PLACEHOLDER": 
+        st.error("بيانات اتصال Qdrant مفقودة أو هي قيم نائبة."); return None
     try: return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=10) 
     except Exception as e: st.error(f"فشل الاتصال بـ Qdrant: {e}"); return None
 
@@ -158,9 +153,9 @@ def init_embedding_model_resource():
 # ----------------------
 def comprehensive_search(query, max_results=50):
     embedding_model = init_embedding_model_resource()
-    if not embedding_model: return [], "فشل تحميل نموذج التضمين.", [] # Added empty list for initial_search_details
+    if not embedding_model: return [], "فشل تحميل نموذج التضمين.", [] 
     qdrant_c = init_qdrant_client_resource()
-    if not qdrant_c: return [], "فشل الاتصال بـ Qdrant.", [] # Added empty list for initial_search_details
+    if not qdrant_c: return [], "فشل الاتصال بـ Qdrant.", [] 
     try:
         print(f"Query: '{query}', Model: {type(embedding_model)}")
         query_embedding = embedding_model.encode([query])[0].tolist()
@@ -171,7 +166,7 @@ def comprehensive_search(query, max_results=50):
             limit=max_results, with_payload=True, score_threshold=score_thresh
         )
         initial_search_details = []
-        if search_results_qdrant: # Check if search_results_qdrant is not None
+        if search_results_qdrant: 
             initial_search_details = [{"id": sr.id, "score": sr.score, 
                                     "source": sr.payload.get('source', 'N/A') if sr.payload else 'N/A', 
                                     "text_preview": (sr.payload.get('text', '')[:100] + "...") if sr.payload else ''} 
@@ -213,15 +208,11 @@ def prepare_llm_messages(user_question, context, context_info):
     user_content = (f"السؤال المطروح: {user_question}\n\nالمصادر المتاحة من قاعدة البيانات فقط (أجب بناءً عليها حصراً):\n{context}\n\nمعلومات إضافية عن السياق: {context_info}\n\nالتعليمات: يرجى تقديم إجابة بناءً على النصوص أعلاه فقط. إذا لم تكن الإجابة موجودة، وضح ذلك.")
     return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
 
-def get_openai_response(messages, max_tokens=2000):
-    if not openai_client: return "OpenAI client غير مهيأ."
-    try:
-        r = openai_client.chat.completions.create(model="gpt-3.5-turbo", messages=messages, temperature=0.05, max_tokens=max_tokens)
-        return r.choices[0].message.content
-    except Exception as e: print(f"OpenAI API error: {e}"); return f"خطأ OpenAI: {str(e)}"
+# get_openai_response function removed
 
 def get_deepseek_response(messages, max_tokens=2000):
-    if not DEEPSEEK_API_KEY: return "DeepSeek API key مفقود."
+    if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER": 
+        return "DeepSeek API key مفقود أو نائب."
     try:
         h = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
         d = {"model": "deepseek-chat", "messages": messages, "temperature": 0.05, "max_tokens": max_tokens, "stream": False}
@@ -238,7 +229,8 @@ def get_deepseek_response(messages, max_tokens=2000):
 
 def get_gemini_response(messages, max_tokens=2000):
     global gemini_initial_configured
-    if not GEMINI_API_KEY: return "Gemini API key مفقود."
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_PLACEHOLDER": 
+        return "Gemini API key مفقود أو نائب."
     try:
         if not gemini_initial_configured: genai.configure(api_key=GEMINI_API_KEY); gemini_initial_configured = True
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -273,7 +265,7 @@ def main():
     with st.expander("⚙️ الإعدادات وحالة الأنظمة", expanded=True):
         st.markdown("<div style='text-align: right; font-weight: bold; margin-bottom: 0.5rem;'>اختر محرك الذكاء الاصطناعي:</div>", unsafe_allow_html=True)
         llm_opts, llm_caps, active_llms_idx = [], [], []
-        llm_apis = [("DeepSeek", "DeepSeek"), ("OpenAI", "OpenAI"), ("Gemini", "Gemini")]
+        llm_apis = [("DeepSeek", "DeepSeek"), ("Gemini", "Gemini")] # OpenAI removed from list
         def_idx = 0
         for i, (disp, internal) in enumerate(llm_apis):
             ok, msg = check_api_status(internal)
@@ -293,7 +285,7 @@ def main():
         s_depth_opts = ["بحث سريع (10)", "بحث متوسط (25)", "بحث شامل (50)"]
         s_depth = st.radio("مستوى البحث:", s_depth_opts, index=1, horizontal=True, key="s_depth_radio", label_visibility="collapsed")
         max_db_res = {"بحث سريع (10)": 10, "بحث متوسط (25)": 25, "بحث شامل (50)": 50}[s_depth]
-        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb") # Default to True
+        show_dbg = st.checkbox("إظهار معلومات تفصيلية", value=True, key="debug_cb") 
 
     if q_info_data['status'] and q_info_data['details']:
         with st.expander("ℹ️ معلومات قاعدة البيانات", expanded=False):
@@ -316,17 +308,15 @@ def main():
                 full_debug_info_parts = []
                 if "debug_info" in msg_item: full_debug_info_parts.append(msg_item["debug_info"])
                 
-                # Displaying initial Qdrant search details if available and debug is on
                 if show_dbg and "initial_search_details" in msg_item and msg_item["initial_search_details"]:
                     details_str_parts = []
                     for d_idx, d in enumerate(msg_item["initial_search_details"]):
-                        # Ensure id is a string before slicing
                         display_id = str(d.get('id', 'N/A')) 
                         details_str_parts.append(f"  {d_idx+1}. ID: {display_id[:8]}... | Score: {d.get('score', 0):.3f} | Source: {d.get('source', 'N/A')} | Preview: {d.get('text_preview', 'N/A')}")
                     details_str = "\n".join(details_str_parts)
                     full_debug_info_parts.append(f"نتائج Qdrant الأولية ({len(msg_item['initial_search_details'])}):\n{details_str}")
                 
-                if show_dbg and full_debug_info_parts: # Check again if there's anything to show
+                if show_dbg and full_debug_info_parts: 
                     st.markdown(f'<div class="debug-info">🔍 معلومات تفصيلية:<div class="debug-info-results">{"<hr>".join(full_debug_info_parts)}</div></div>', unsafe_allow_html=True)
 
                 if "sources" in msg_item and msg_item["sources"]:
@@ -380,8 +370,8 @@ def main():
             
             bot_response = ""
             with st.spinner(f"جاري التحليل بواسطة {sel_llm}..."):
-                if sel_llm == "OpenAI": bot_response = get_openai_response(llm_msgs)
-                elif sel_llm == "DeepSeek": bot_response = get_deepseek_response(llm_msgs)
+                # OpenAI option removed
+                if sel_llm == "DeepSeek": bot_response = get_deepseek_response(llm_msgs)
                 elif sel_llm == "Gemini": bot_response = get_gemini_response(llm_msgs)
                 else: bot_response = "المحرك المحدد غير معروف."
             
@@ -403,13 +393,57 @@ def main():
         if st.button("🗑️ مسح المحادثة", use_container_width=True, key="clear_btn", type="secondary"):
             st.session_state.messages = []; st.toast("تم مسح المحادثة.", icon="🗑️"); time.sleep(0.5); st.rerun()
 
-# This is the expected end of the script.
-# Ensure no extra characters or lines are present after this block.
 if __name__ == "__main__":
-    if not all([QDRANT_API_KEY, QDRANT_URL]):
-        st.error("معلومات QDRANT مفقودة. تحقق من الإعدادات.")
-    if not any([OPENAI_API_KEY and OPENAI_API_KEY != "YOUR_OPENAI_API_KEY_PLACEHOLDER", 
-                DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER", 
-                GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER"]): # Check if at least one LLM key exists and is not a placeholder
+    if not all([QDRANT_API_KEY and QDRANT_API_KEY != "YOUR_QDRANT_API_KEY_PLACEHOLDER", 
+                QDRANT_URL and QDRANT_URL != "YOUR_QDRANT_URL_PLACEHOLDER"]):
+        st.error("معلومات QDRANT مفقودة أو هي قيم افتراضية. تحقق من الإعدادات.")
+    if not any([DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != "YOUR_DEEPSEEK_API_KEY_PLACEHOLDER", 
+                GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_PLACEHOLDER"]): 
         st.info("بعض مفاتيح LLM API مفقودة أو هي قيم افتراضية.", icon="ℹ️")
     main()
+
+# --- Deployment Notes ---
+# This Streamlit application can be deployed in several ways:
+#
+# 1. VPS (e.g., Hostinger VPS):
+#    - Ensure Python and pip are installed.
+#    - Install dependencies: pip install -r requirements.txt
+#    - Run the app: streamlit run app.py --server.port <your_chosen_port>
+#    - For production, it's recommended to use a web server like Nginx or Apache
+#      as a reverse proxy to handle SSL, domain mapping, and serve the app.
+#    - Example Nginx configuration snippet:
+#      location / {
+#          proxy_pass http://localhost:<your_chosen_port>;
+#          proxy_http_version 1.1;
+#          proxy_set_header Upgrade $http_upgrade;
+#          proxy_set_header Connection "upgrade";
+#          proxy_set_header Host $host;
+#          proxy_set_header X-Real-IP $remote_addr;
+#          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#          proxy_set_header X-Forwarded-Proto $scheme;
+#      }
+#
+# 2. Shared Hosting (e.g., Namecheap with cPanel):
+#    - Shared hosting environments can be more restrictive.
+#    - Look for "Setup Python App" or similar in cPanel.
+#    - You'll need to configure the app's entry point. Streamlit is not a traditional
+#      WSGI app, so direct deployment might be challenging or not fully supported
+#      depending on the host's specific setup for Python apps.
+#    - Ensure all dependencies from requirements.txt can be installed in the
+#      shared hosting environment. Some hosts might have limitations.
+#    - Resource limits (CPU, memory) on shared hosting might also affect performance.
+#    - It's crucial to check your hosting provider's documentation for the best
+#      way to deploy Python web applications.
+#
+# 3. Environment Variables for API Keys:
+#    - This application has been updated to use os.getenv for API keys (QDRANT_URL,
+#      QDRANT_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY).
+#    - Set these environment variables in your deployment environment rather than
+#      hardcoding them directly in the script for better security and flexibility.
+#      For example, in a Linux shell: export GEMINI_API_KEY="your_actual_key"
+#      Or use your hosting provider's interface for setting environment variables.
+#
+# 4. Collection Name:
+#    - The Qdrant collection name (COLLECTION_NAME) is set in the script. Ensure this
+#      collection exists in your Qdrant instance.
+#

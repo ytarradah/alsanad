@@ -3,5 +3,4 @@ requests
 qdrant-client
 sentence-transformers
 pandas
-openai
 google-generativeai
