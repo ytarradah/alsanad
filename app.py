@@ -1,4 +1,15 @@
 import streamlit as st
+
+# ----------------------
+# MUST BE FIRST - Page Configuration
+# ----------------------
+st.set_page_config(
+    page_title="المرجع السند - بحث فائق", 
+    page_icon="🕌", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
+
 import os
 import time
 import unicodedata
@@ -117,14 +128,14 @@ def load_arabic_css():
     """, unsafe_allow_html=True)
 
 # ----------------------
-# Initialize Components
+# Initialize Components (without st.error to avoid config issues)
 # ----------------------
 @st.cache_resource
 def init_qdrant_client():
     try:
         return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=10)
     except Exception as e:
-        st.error(f"فشل الاتصال بـ Qdrant: {e}")
+        print(f"فشل الاتصال بـ Qdrant: {e}")  # Use print instead of st.error
         return None
 
 @st.cache_resource
@@ -132,7 +143,7 @@ def init_embedding_model():
     try:
         return SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
     except Exception as e:
-        st.error(f"فشل تحميل نموذج التضمين: {e}")
+        print(f"فشل تحميل نموذج التضمين: {e}")  # Use print instead of st.error
         return None
 
 # ----------------------
@@ -449,9 +460,8 @@ def get_gemini_response(messages, max_tokens=2000):
         return f"خطأ Gemini: {str(e)}"
 
 # ----------------------
-# Status Functions
+# Status Functions (Safe - no st.error calls)
 # ----------------------
-@st.cache_data(ttl=300)
 def get_qdrant_info():
     try:
         client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=5)
@@ -471,7 +481,6 @@ def get_qdrant_info():
             return {"status": False, "message": f"غير متصل (المجموعة '{COLLECTION_NAME}' غير موجودة)", "details": {}}
         return {"status": False, "message": f"غير متصل (خطأ: {type(e).__name__})", "details": {}}
 
-@st.cache_data(ttl=300)
 def check_api_status(api_name):
     global gemini_initial_configured
     if api_name == "DeepSeek":
@@ -505,7 +514,6 @@ def check_api_status(api_name):
 # Main Application
 # ----------------------
 def main():
-    st.set_page_config(page_title="المرجع السند - بحث فائق", page_icon="🕌", layout="wide", initial_sidebar_state="collapsed")
     load_arabic_css()
     
     st.markdown('<h1 class="main-header">موقع المرجع الديني الشيخ محمد السند</h1>', unsafe_allow_html=True)
@@ -764,7 +772,7 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    # Configuration validation
+    # Show system status
     config_issues = []
     
     if not QDRANT_API_KEY or not QDRANT_URL:
